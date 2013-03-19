@@ -1431,6 +1431,7 @@ static void note_gp_changes(struct rcu_state *rsp, struct rcu_data *rdp)
 }
 
 /*
+<<<<<<< HEAD
  * Advance this CPU's callbacks, but only if the current grace period
  * has ended.  This may be called only from the CPU to whom the rdp
  * belongs.
@@ -1486,9 +1487,6 @@ check_for_new_grace_period(struct rcu_state *rsp, struct rcu_data *rdp)
 static void
 rcu_start_gp_per_cpu(struct rcu_state *rsp, struct rcu_node *rnp, struct rcu_data *rdp)
 {
-	/* Prior grace period ended, so advance callbacks for current CPU. */
-	__rcu_process_gp_end(rsp, rnp, rdp);
-
 	/* Set state so that this CPU will detect the next quiescent state. */
 
 	__note_gp_changes(rsp, rnp, rdp);
@@ -2384,6 +2382,9 @@ __rcu_process_callbacks(struct rcu_state *rsp)
 
 	WARN_ON_ONCE(rdp->beenonline == 0);
 
+	/* Handle the end of a grace period that some other CPU ended.  */
+	note_gp_changes(rsp, rdp);
+
 	/* Update RCU state based on any recent quiescent states. */
 	rcu_check_quiescent_state(rsp, rdp);
 
@@ -2472,7 +2473,9 @@ static void __call_rcu_core(struct rcu_state *rsp, struct rcu_data *rdp,
 	if (unlikely(rdp->qlen > rdp->qlen_last_fqs_check + qhimark)) {
 
 		/* Are we ignoring a completed grace period? */
-		note_gp_changes(rsp, rdp);
+//		note_gp_changes(rsp, rdp);
+
+		check_for_new_grace_period(rsp, rdp);
 
 		/* Start a new grace period if one not already started. */
 		if (!rcu_gp_in_progress(rsp)) {
