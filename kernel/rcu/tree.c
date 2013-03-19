@@ -1394,7 +1394,7 @@ static bool __note_gp_changes(struct rcu_state *rsp, struct rcu_node *rnp,
  * ->lock of the leaf rcu_node structure corresponding to the current CPU,
  *  and must have irqs disabled.
  */
-static void __note_new_gpnum(struct rcu_state *rsp, struct rcu_node *rnp, struct rcu_data *rdp)
+static void __note_gp_changes(struct rcu_state *rsp, struct rcu_node *rnp, struct rcu_data *rdp)
 {
 	/* Handle the ends of any preceding grace periods first. */
 	__rcu_process_gp_end(rsp, rnp, rdp);
@@ -1413,19 +1413,20 @@ static void __note_new_gpnum(struct rcu_state *rsp, struct rcu_node *rnp, struct
 	}
 }
 
-static void note_new_gpnum(struct rcu_state *rsp, struct rcu_data *rdp)
+static void note_gp_changes(struct rcu_state *rsp, struct rcu_data *rdp)
 {
 	unsigned long flags;
 	struct rcu_node *rnp;
 
 	local_irq_save(flags);
 	rnp = rdp->mynode;
-	if (rdp->gpnum == ACCESS_ONCE(rnp->gpnum) || /* outside lock. */
+	if ((rdp->gpnum == ACCESS_ONCE(rnp->gpnum) &&
+	     rdp->completed == ACCESS_ONCE(rnp->completed)) || /* w/out lock. */
 	    !raw_spin_trylock(&rnp->lock)) { /* irqs already off, so later. */
 		local_irq_restore(flags);
 		return;
 	}
-	__note_new_gpnum(rsp, rnp, rdp);
+	__note_gp_changes(rsp, rnp, rdp);
 	raw_spin_unlock_irqrestore(&rnp->lock, flags);
 }
 
@@ -1470,7 +1471,7 @@ check_for_new_grace_period(struct rcu_state *rsp, struct rcu_data *rdp)
 
 	local_irq_save(flags);
 	if (rdp->gpnum != rsp->gpnum) {
-		note_new_gpnum(rsp, rdp);
+		note_gp_changes(rsp, rdp);
 		ret = 1;
 	}
 	local_irq_restore(flags);
@@ -1489,8 +1490,8 @@ rcu_start_gp_per_cpu(struct rcu_state *rsp, struct rcu_node *rnp, struct rcu_dat
 	__rcu_process_gp_end(rsp, rnp, rdp);
 
 	/* Set state so that this CPU will detect the next quiescent state. */
-	__note_new_gpnum(rsp, rnp, rdp);
 
+	__note_gp_changes(rsp, rnp, rdp);
 }
 
 /*
