@@ -1396,6 +1396,9 @@ static bool __note_gp_changes(struct rcu_state *rsp, struct rcu_node *rnp,
  */
 static void __note_new_gpnum(struct rcu_state *rsp, struct rcu_node *rnp, struct rcu_data *rdp)
 {
+	/* Handle the ends of any preceding grace periods first. */
+	__rcu_process_gp_end(rsp, rnp, rdp);
+
 	if (rdp->gpnum != rnp->gpnum) {
 		/*
 		 * If the current grace period is waiting for this CPU,
