@@ -1433,6 +1433,7 @@ static void note_gp_changes(struct rcu_state *rsp, struct rcu_data *rdp)
 /*
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
  * Advance this CPU's callbacks, but only if the current grace period
  * has ended.  This may be called only from the CPU to whom the rdp
  * belongs.
@@ -1496,6 +1497,8 @@ rcu_start_gp_per_cpu(struct rcu_state *rsp, struct rcu_node *rnp, struct rcu_dat
 }
 
 /*
+=======
+>>>>>>> 04b8de8dfebf... rcu: Inline trivial wrapper function rcu_start_gp_per_cpu()
  * Initialize a new grace period.
  */
 static int rcu_gp_init(struct rcu_state *rsp)
