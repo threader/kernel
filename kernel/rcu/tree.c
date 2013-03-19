@@ -1432,6 +1432,7 @@ static void note_gp_changes(struct rcu_state *rsp, struct rcu_data *rdp)
 
 /*
 <<<<<<< HEAD
+<<<<<<< HEAD
  * Advance this CPU's callbacks, but only if the current grace period
  * has ended.  This may be called only from the CPU to whom the rdp
  * belongs.
@@ -1480,6 +1481,8 @@ check_for_new_grace_period(struct rcu_state *rsp, struct rcu_data *rdp)
 }
 
 /*
+=======
+>>>>>>> 782b431ddda5... rcu: Eliminate check_for_new_grace_period() wrapper function
  * Do per-CPU grace-period initialization for running CPU.  The caller
  * must hold the lock of the leaf rcu_node structure corresponding to
  * this CPU.
@@ -1916,8 +1919,12 @@ rcu_report_qs_rdp(int cpu, struct rcu_state *rsp, struct rcu_data *rdp)
 static void
 rcu_check_quiescent_state(struct rcu_state *rsp, struct rcu_data *rdp)
 {
-	/* Check for grace-period ends and beginnings. */
-	note_gp_changes(rsp, rdp);
+
+	/* If there is now a new grace period, record and return. */
+	if (rdp->gpnum != rsp->gpnum) {
+		note_gp_changes(rsp, rdp);
+		return;
+	}
 
 	/*
 	 * Does this CPU still need to do its part for current grace period?
@@ -2474,8 +2481,6 @@ static void __call_rcu_core(struct rcu_state *rsp, struct rcu_data *rdp,
 
 		/* Are we ignoring a completed grace period? */
 		note_gp_changes(rsp, rdp);
-
-//		check_for_new_grace_period(rsp, rdp);
 
 		/* Start a new grace period if one not already started. */
 		if (!rcu_gp_in_progress(rsp)) {
