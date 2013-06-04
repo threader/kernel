@@ -142,6 +142,22 @@ static void ext4_release_io_end(ext4_io_end_t *io_end)
 		bio_put(bio);
 	}
 	kmem_cache_free(io_end_cachep, io_end);
+
+	if (io_end->flag & EXT4_IO_END_DIRECT)
+		inode_dio_done(io_end->inode);
+	if (io_end->iocb)
+		aio_complete(io_end->iocb, io_end->result, 0);
+	kmem_cache_free(io_end_cachep, io_end);
+}
+
+static void ext4_clear_io_unwritten_flag(ext4_io_end_t *io_end)
+{
+	struct inode *inode = io_end->inode;
+
+	io_end->flag &= ~EXT4_IO_END_UNWRITTEN;
+	/* Wake up anyone waiting on unwritten extent conversion */
+	if (atomic_dec_and_test(&EXT4_I(inode)->i_unwritten))
+		wake_up_all(ext4_ioend_wq(inode));
 }
 
 static void ext4_clear_io_unwritten_flag(ext4_io_end_t *io_end)
@@ -295,6 +311,46 @@ int ext4_put_io_end(ext4_io_end_t *io_end)
 
 	if (atomic_dec_and_test(&io_end->count)) {
 		if (io_end->flag & EXT4_IO_END_UNWRITTEN) {
+			err = ext4_convert_unwritten_extents(io_end->inode,
+						io_end->offset, io_end->size);
+			ext4_clear_io_unwritten_flag(io_end);
+		}
+		ext4_release_io_end(io_end);
+	}
+	return err;
+}
+
+ext4_io_end_t *ext4_get_io_end(ext4_io_end_t *io_end)
+{
+	atomic_inc(&io_end->count);
+	return io_end;
+}
+
+/*
+ * Print an buffer I/O error compatible with the fs/buffer.c.  This
+ * provides compatibility with dmesg scrapers that look for a specific
+ * buffer I/O error message.  We really need a unified error reporting
+ * structure to userspace ala Digital Unix's uerf system, but it's
+ * probably not going to happen in my lifetime, due to LKML politics...
+ */
+static void buffer_io_error(struct buffer_head *bh)
+>>>>>>> 1a1f429f60d7... ext4: use io_end for multiple bios
+{
+	if (atomic_dec_and_test(&io_end->count)) {
+		if (!(io_end->flag & EXT4_IO_END_UNWRITTEN) || !io_end->size) {
+			ext4_release_io_end(io_end);
+			return;
+		}
+		ext4_add_complete_io(io_end);
+	}
+}
+
+int ext4_put_io_end(ext4_io_end_t *io_end)
+{
+	int err = 0;
+
+	if (atomic_dec_and_test(&io_end->count)) {
+		if (io_end->flag & EXT4_IO_END_UNWRITTEN) {
 			err = ext4_convert_unwritten_extents(io_end->handle,
 						io_end->inode, io_end->offset,
 						io_end->size);
@@ -353,6 +409,7 @@ static void ext4_end_bio(struct bio *bio, int error)
 		ext4_finish_bio(bio);
 		bio_put(bio);
 	}
+	ext4_put_io_end_defer(io_end);
 }
 
 void ext4_io_submit(struct ext4_io_submit *io)
@@ -389,6 +446,9 @@ static int io_submit_init_bio(struct ext4_io_submit *io,
 	bio->bi_bdev = bh->b_bdev;
 	bio->bi_end_io = ext4_end_bio;
 	bio->bi_private = ext4_get_io_end(io->io_end);
+	if (!io->io_end->size)
+		io->io_end->offset = (bh->b_page->index << PAGE_CACHE_SHIFT)
+				     + bh_offset(bh);
 	io->io_bio = bio;
 	io->io_next_block = bh->b_blocknr;
 	return 0;
@@ -396,7 +456,6 @@ static int io_submit_init_bio(struct ext4_io_submit *io,
 
 static int io_submit_add_bh(struct ext4_io_submit *io,
 			    struct inode *inode,
-			    struct page *page,
 			    struct buffer_head *bh)
 {
 	int ret;
@@ -410,9 +469,13 @@ submit_and_retry:
 		if (ret)
 			return ret;
 	}
-	ret = bio_add_page(io->io_bio, page, bh->b_size, bh_offset(bh));
+	ret = bio_add_page(io->io_bio, bh->b_page, bh->b_size, bh_offset(bh));
 	if (ret != bh->b_size)
 		goto submit_and_retry;
+	io_end = io->io_end;
+	if (test_clear_buffer_uninit(bh))
+		ext4_set_io_unwritten_flag(inode, io_end);
+	io_end->size += bh->b_size;
 	io->io_next_block++;
 	return 0;
 }
@@ -498,8 +561,7 @@ int ext4_bio_write_page(struct ext4_io_submit *io,
 	do {
 		if (!buffer_async_write(bh))
 			continue;
-		ret = io_submit_add_bh(io, inode,
-				       data_page ? data_page : page, bh);
+		ret = io_submit_add_bh(io, inode, bh);
 		if (ret) {
 			/*
 			 * We only get here on ENOMEM.  Not much else

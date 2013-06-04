@@ -1393,21 +1393,133 @@ static void ext4_da_page_release_reservation(struct page *page,
  * Delayed allocation stuff
  */
 
-struct mpage_da_data {
-	struct inode *inode;
-	struct writeback_control *wbc;
+static void ext4_da_block_invalidatepages(struct mpage_da_data *mpd);
 
-	pgoff_t first_page;	/* The first page to write */
-	pgoff_t next_page;	/* Current page to examine */
-	pgoff_t last_page;	/* Last page to examine */
+/*
+ * mpage_da_submit_io - walks through extent of pages and try to write
+ * them with writepage() call back
+ *
+ * @mpd->inode: inode
+ * @mpd->first_page: first page of the extent
+ * @mpd->next_page: page after the last page of the extent
+ *
+ * By the time mpage_da_submit_io() is called we expect all blocks
+ * to be allocated. this may be wrong if allocation failed.
+ *
+ * As pages are already locked by write_cache_pages(), we can't use it
+ */
+static int mpage_da_submit_io(struct mpage_da_data *mpd,
+			      struct ext4_map_blocks *map)
+{
+	struct pagevec pvec;
+	unsigned long index, end;
+	int ret = 0, err, nr_pages, i;
+	struct inode *inode = mpd->inode;
+	struct address_space *mapping = inode->i_mapping;
+	loff_t size = i_size_read(inode);
+	unsigned int len, block_start;
+	struct buffer_head *bh, *page_bufs = NULL;
+	sector_t pblock = 0, cur_logical = 0;
+	struct ext4_io_submit io_submit;
+
+	BUG_ON(mpd->next_page <= mpd->first_page);
+	ext4_io_submit_init(&io_submit, mpd->wbc);
+	io_submit.io_end = ext4_init_io_end(inode, GFP_NOFS);
+	if (!io_submit.io_end) {
+		ext4_da_block_invalidatepages(mpd);
+		return -ENOMEM;
+	}
 	/*
-	 * Extent to map - this can be after first_page because that can be
-	 * fully mapped. We somewhat abuse m_flags to store whether the extent
-	 * is delalloc or unwritten.
+	 * We need to start from the first_page to the next_page - 1
+	 * to make sure we also write the mapped dirty buffer_heads.
+	 * If we look at mpd->b_blocknr we would only be looking
+	 * at the currently mapped buffer_heads.
 	 */
-	struct ext4_map_blocks map;
-	struct ext4_io_submit io_submit;	/* IO submission data */
-};
+	index = mpd->first_page;
+	end = mpd->next_page - 1;
+
+	pagevec_init(&pvec, 0);
+	while (index <= end) {
+		nr_pages = pagevec_lookup(&pvec, mapping, index, PAGEVEC_SIZE);
+		if (nr_pages == 0)
+			break;
+		for (i = 0; i < nr_pages; i++) {
+			int skip_page = 0;
+			struct page *page = pvec.pages[i];
+
+			index = page->index;
+			if (index > end)
+				break;
+
+			if (index == size >> PAGE_CACHE_SHIFT)
+				len = size & ~PAGE_CACHE_MASK;
+			else
+				len = PAGE_CACHE_SIZE;
+			if (map) {
+				cur_logical = index << (PAGE_CACHE_SHIFT -
+							inode->i_blkbits);
+				pblock = map->m_pblk + (cur_logical -
+							map->m_lblk);
+			}
+			index++;
+
+			BUG_ON(!PageLocked(page));
+			BUG_ON(PageWriteback(page));
+
+			bh = page_bufs = page_buffers(page);
+			block_start = 0;
+			do {
+				if (map && (cur_logical >= map->m_lblk) &&
+				    (cur_logical <= (map->m_lblk +
+						     (map->m_len - 1)))) {
+					if (buffer_delay(bh)) {
+						clear_buffer_delay(bh);
+						bh->b_blocknr = pblock;
+					}
+					if (buffer_unwritten(bh) ||
+					    buffer_mapped(bh))
+						BUG_ON(bh->b_blocknr != pblock);
+					if (map->m_flags & EXT4_MAP_UNINIT)
+						set_buffer_uninit(bh);
+					clear_buffer_unwritten(bh);
+				}
+
+				/*
+				 * skip page if block allocation undone and
+				 * block is dirty
+				 */
+				if (ext4_bh_delay_or_unwritten(NULL, bh))
+					skip_page = 1;
+				bh = bh->b_this_page;
+				block_start += bh->b_size;
+				cur_logical++;
+				pblock++;
+			} while (bh != page_bufs);
+
+			if (skip_page) {
+				unlock_page(page);
+				continue;
+			}
+
+			clear_page_dirty_for_io(page);
+			err = ext4_bio_write_page(&io_submit, page, len,
+						  mpd->wbc);
+			if (!err)
+				mpd->pages_written++;
+			/*
+			 * In error case, we have to continue because
+			 * remaining pages are still locked
+			 */
+			if (ret == 0)
+				ret = err;
+		}
+		pagevec_release(&pvec);
+	}
+	ext4_io_submit(&io_submit);
+	/* Drop io_end reference we got from init */
+	ext4_put_io_end_defer(io_submit.io_end);
+	return ret;
+}
 
 static void mpage_release_unused_pages(struct mpage_da_data *mpd,
 				       bool invalidate)
@@ -1860,7 +1972,7 @@ static int ext4_writepage(struct page *page,
 		unlock_page(page);
 		return -ENOMEM;
 	}
-	ret = ext4_bio_write_page(&io_submit, page, len, wbc, keep_towrite);
+	ret = ext4_bio_write_page(&io_submit, page, len, wbc);
 	ext4_io_submit(&io_submit);
 	/* Drop io_end reference we got from init */
 	ext4_put_io_end_defer(io_submit.io_end);
@@ -3040,8 +3152,12 @@ static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,
         ext4_io_end_t *io_end = iocb->private;
 
 	/* if not async direct IO just return */
-	if (!io_end)
+	if (!io_end) {
+		inode_dio_done(inode);
+		if (is_async)
+			aio_complete(iocb, ret, 0);
 		return;
+	}
 
 	ext_debug("ext4_end_io_dio(): io_end 0x%p "
 		  "for inode %lu, iocb 0x%p, offset %llu, size %zd\n",
@@ -3051,7 +3167,11 @@ static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,
 	iocb->private = NULL;
 	io_end->offset = offset;
 	io_end->size = size;
-	ext4_put_io_end(io_end);
+	if (is_async) {
+		io_end->iocb = iocb;
+		io_end->result = ret;
+	}
+	ext4_put_io_end_defer(io_end);
 }
 
 /*
@@ -3136,6 +3256,7 @@ static ssize_t ext4_ext_direct_IO(int rw, struct kiocb *iocb,
 			ret = -ENOMEM;
 			goto retake_lock;
 		}
+		io_end->flag |= EXT4_IO_END_DIRECT;
 		/*
 		 * Grab reference for DIO. Will be dropped in ext4_end_io_dio()
 		 */
@@ -3183,6 +3304,13 @@ static ssize_t ext4_ext_direct_IO(int rw, struct kiocb *iocb,
 		if (ret <= 0 && ret != -EIOCBQUEUED && iocb->private) {
 			WARN_ON(iocb->private != io_end);
 			WARN_ON(io_end->flag & EXT4_IO_END_UNWRITTEN);
+			WARN_ON(io_end->iocb);
+			/*
+			 * Generic code already did inode_dio_done() so we
+			 * have to clear EXT4_IO_END_DIRECT to not do it for
+			 * the second time.
+			 */
+			io_end->flag = 0;
 			ext4_put_io_end(io_end);
 			iocb->private = NULL;
 		}
