@@ -181,6 +181,7 @@ struct ext4_map_blocks {
  * Flags for ext4_io_end->flags
  */
 #define	EXT4_IO_END_UNWRITTEN	0x0001
+#define EXT4_IO_END_DIRECT	0x0002
 
 /*
  * For converting unwritten extents on a work queue. 'handle' is used for

@@ -105,6 +105,13 @@ int ext4_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
 			ret = -EROFS;
 		goto out;
 	}
+	ret = filemap_write_and_wait_range(inode->i_mapping, start, end);
+	if (ret)
+		return ret;
+	mutex_lock(&inode->i_mutex);
+
+	if (inode->i_sb->s_flags & MS_RDONLY)
+		goto out;
 
 	if (!journal) {
 		ret = generic_file_fsync(file, start, end, datasync);
