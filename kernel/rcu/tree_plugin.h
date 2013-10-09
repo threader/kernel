@@ -1108,6 +1108,8 @@ static void __init __rcu_init_preempt(void)
 
 #include "../locking/rtmutex_common.h"
 
+//#include "../rtmutex_common.h"
+
 #ifdef CONFIG_RCU_TRACE
 
 static void rcu_initiate_boost_trace(struct rcu_node *rnp)

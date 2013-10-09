@@ -20,10 +20,13 @@ obj-y     = fork.o exec_domain.o panic.o printk.o \
 	    sysctl.o sysctl_binary.o capability.o ptrace.o timer.o user.o \
 	    signal.o sys.o kmod.o workqueue.o pid.o task_work.o \
 	    extable.o params.o posix-timers.o \
-	    kthread.o sys_ni.o posix-cpu-timers.o \
-	    hrtimer.o nsproxy.o \
+	    kthread.o wait.o sys_ni.o posix-cpu-timers.o mutex.o \
+	    hrtimer.o rwsem.o nsproxy.o semaphore.o \
 	    notifier.o ksysfs.o cred.o \
 	    async.o range.o groups.o smpboot.o
+
+#	    kthread.o sys_ni.o posix-cpu-timers.o \
+#	    hrtimer.o nsproxy.o \
 
 ifdef CONFIG_FUNCTION_TRACER
 # Do not trace debug files and internal ftrace files
