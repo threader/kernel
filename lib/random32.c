@@ -262,6 +262,11 @@ static void __prandom_reseed(bool late)
 	if (!spin_trylock_irqsave(&lock, flags))
 		return;
 
+//	if (latch && !late)
+//		goto out;
+
+	/* only allow initial seeding (late == false) once */
+	spin_lock_irqsave(&lock, flags);
 	if (latch && !late)
 		goto out;
 
