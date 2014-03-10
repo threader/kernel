@@ -1727,6 +1727,16 @@ static int __noreturn rcu_gp_kthread(void *arg)
 	}
 }
 
+static void rsp_wakeup(struct irq_work *work)
+{
+	struct rcu_state *rsp = container_of(work, struct rcu_state, wakeup_work);
+
+	/* Wake up rcu_gp_kthread() to start the grace period. */
+	wake_up(&rsp->gp_wq);
+	trace_rcu_grace_period(rsp->name, ACCESS_ONCE(rsp->gpnum),
+			       "Workqueuewoken");
+}
+
 /*
  * Start a new RCU grace period if warranted, re-initializing the hierarchy
  * in preparation for detecting the next grace period.  The caller must hold
@@ -1758,8 +1768,11 @@ rcu_start_gp_advanced(struct rcu_state *rsp, struct rcu_node *rnp,
 	 * the wakeup to interrupt context.  And don't bother waking
 	 * up the running kthread.
 	 */
-	if (current != rsp->gp_kthread)
+	if (current != rsp->gp_kthread) {
+		trace_rcu_grace_period(rsp->name, ACCESS_ONCE(rsp->gpnum),
+				       "Workqueuewake");
 		irq_work_queue(&rsp->wakeup_work);
+	}
 }
 
 /*
