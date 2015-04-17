@@ -38,6 +38,8 @@ struct uid_entry {
 	cputime_t stime;
 	cputime_t active_utime;
 	cputime_t active_stime;
+	unsigned long long active_power;
+	unsigned long long power;
 	struct hlist_node hash;
 };
 
@@ -83,6 +85,7 @@ static int uid_stat_show(struct seq_file *m, void *v)
 	hash_for_each(hash_table, bkt, uid_entry, hash) {
 		uid_entry->active_stime = 0;
 		uid_entry->active_utime = 0;
+		uid_entry->active_power = 0;
 	}
 
 	read_lock(&tasklist_lock);
@@ -100,7 +103,9 @@ static int uid_stat_show(struct seq_file *m, void *v)
 		task_cputime_adjusted(task, &utime, &stime);
 		uid_entry->active_utime += utime;
 		uid_entry->active_stime += stime;
-	}
+		uid_entry->active_power += task->cpu_power;
+	} while_each_thread(temp, task);
+
 	read_unlock(&tasklist_lock);
 
 	hash_for_each(hash_table, bkt, uid_entry, hash) {
@@ -209,6 +214,7 @@ static int process_notifier(struct notifier_block *self,
 	task_cputime_adjusted(task, &utime, &stime);
 	uid_entry->utime += utime;
 	uid_entry->stime += stime;
+	uid_entry->power += task->cpu_power;
 
 exit:
 	mutex_unlock(&uid_lock);
