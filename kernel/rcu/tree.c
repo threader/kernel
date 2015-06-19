@@ -1385,8 +1385,6 @@ static bool __note_gp_changes(struct rcu_state *rsp, struct rcu_node *rnp,
 	return ret;
 }
 
-//static void note_gp_changes(struct rcu_state *rsp, struct rcu_data *rdp)
-
 /*
  * Update CPU-local rcu_data state to record the newly noticed grace period.
  * This is used both when we started the grace period and when we notice
@@ -1416,6 +1414,7 @@ static void __note_gp_changes(struct rcu_state *rsp, struct rcu_node *rnp, struc
 static void note_gp_changes(struct rcu_state *rsp, struct rcu_data *rdp)
 {
 	unsigned long flags;
+	bool needwake;
 	struct rcu_node *rnp;
 
 	local_irq_save(flags);
@@ -1426,8 +1425,10 @@ static void note_gp_changes(struct rcu_state *rsp, struct rcu_data *rdp)
 		local_irq_restore(flags);
 		return;
 	}
-	__note_gp_changes(rsp, rnp, rdp);
+	needwake = __note_gp_changes(rsp, rnp, rdp);
 	raw_spin_unlock_irqrestore(&rnp->lock, flags);
+	if (needwake)
+		rcu_gp_kthread_wake(rsp);
 }
 
 /*
@@ -1457,29 +1458,6 @@ rcu_process_gp_end(struct rcu_state *rsp, struct rcu_data *rdp)
 
 }
 
-/*
- * Did someone else start a new RCU grace period start since we last
- * checked?  Update local state appropriately if so.  Must be called
- * on the CPU corresponding to rdp.
- */
-static int
-check_for_new_grace_period(struct rcu_state *rsp, struct rcu_data *rdp)
-{
-	unsigned long flags;
-	int ret = 0;
-
-	local_irq_save(flags);
-	if (rdp->gpnum != rsp->gpnum) {
-		note_gp_changes(rsp, rdp);
-		ret = 1;
-	}
-	local_irq_restore(flags);
-	return ret;
-}
-
-/*
-=======
->>>>>>> 782b431ddda5... rcu: Eliminate check_for_new_grace_period() wrapper function
  * Do per-CPU grace-period initialization for running CPU.  The caller
  * must hold the lock of the leaf rcu_node structure corresponding to
  * this CPU.
@@ -1493,8 +1471,6 @@ rcu_start_gp_per_cpu(struct rcu_state *rsp, struct rcu_node *rnp, struct rcu_dat
 }
 
 /*
-=======
->>>>>>> 04b8de8dfebf... rcu: Inline trivial wrapper function rcu_start_gp_per_cpu()
  * Initialize a new grace period.
  */
 static int rcu_gp_init(struct rcu_state *rsp)
@@ -1727,16 +1703,6 @@ static int __noreturn rcu_gp_kthread(void *arg)
 	}
 }
 
-static void rsp_wakeup(struct irq_work *work)
-{
-	struct rcu_state *rsp = container_of(work, struct rcu_state, wakeup_work);
-
-	/* Wake up rcu_gp_kthread() to start the grace period. */
-	wake_up(&rsp->gp_wq);
-	trace_rcu_grace_period(rsp->name, ACCESS_ONCE(rsp->gpnum),
-			       "Workqueuewoken");
-}
-
 /*
  * Start a new RCU grace period if warranted, re-initializing the hierarchy
  * in preparation for detecting the next grace period.  The caller must hold
@@ -1765,14 +1731,9 @@ rcu_start_gp_advanced(struct rcu_state *rsp, struct rcu_node *rnp,
 	/*
 	 * We can't do wakeups while holding the rnp->lock, as that
 	 * could cause possible deadlocks with the rq->lock. Defer
-	 * the wakeup to interrupt context.  And don't bother waking
-	 * up the running kthread.
+	 * the wakeup to our caller.
 	 */
-	if (current != rsp->gp_kthread) {
-		trace_rcu_grace_period(rsp->name, ACCESS_ONCE(rsp->gpnum),
-				       "Workqueuewake");
-		irq_work_queue(&rsp->wakeup_work);
-	}
+	return true;
 }
 
 /*
