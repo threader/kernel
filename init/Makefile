@@ -1,6 +1,8 @@
 #
 # Makefile for the linux kernel.
 #
+CFLAGS_do_mounts.o := -fno-unsafe-math-optimizations -fno-strict-aliasing
+CFLAGS_init_task.o := -fno-unsafe-math-optimizations -fno-strict-aliasing
 
 ccflags-y := -fno-function-sections -fno-data-sections
 
