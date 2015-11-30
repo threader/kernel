@@ -504,6 +504,7 @@ struct mdss_dsi_ctrl_pdata {
 	struct mdss_dsi_debugfs_info *debugfs_info;
 
 	bool dfps_status;	/* dynamic refresh status */
+
 	bool ds_registered;
 
 	struct kobject *kobj;
@@ -511,6 +512,9 @@ struct mdss_dsi_ctrl_pdata {
 
 	struct workqueue_struct *workq;
 	struct delayed_work dba_work;
+
+
+	struct timespec wait_until_ts;
 };
 
 struct dsi_status_data {
