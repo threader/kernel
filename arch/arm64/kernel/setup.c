@@ -225,10 +225,28 @@ static void __maybe_unused install_bp_hardening_cb(bp_hardening_cb_t fn)
 #endif	/* CONFIG_HARDEN_BRANCH_PREDICTOR */
 
 void __init setup_cpu_features(void)
+
+static void __init setup_processor(void)
 {
+	struct cpu_info *cpu_info;
 	u64 features, block;
 	u32 cwg;
 	int cls;
+
+	cpu_info = lookup_processor_type(read_cpuid_id());
+	if (!cpu_info) {
+		printk("CPU configuration botched (ID %08x), unable to continue.\n",
+		       read_cpuid_id());
+		while (1);
+	}
+
+	cpu_name = cpu_info->cpu_name;
+
+	printk("CPU: %s [%08x] revision %d\n",
+	       cpu_name, read_cpuid_id(), read_cpuid_id() & 15);
+
+	sprintf(init_utsname()->machine, ELF_PLATFORM);
+	elf_hwcap = 0;
 
 	/*
 	 * Check for sane CTR_EL0.CWG value.
@@ -304,25 +322,6 @@ void __init setup_cpu_features(void)
 	if (block && !(block & 0x8))
 		compat_elf_hwcap2 |= COMPAT_HWCAP2_CRC32;
 #endif
-}
-
-static void __init setup_processor(void)
-{
-	struct cpu_info *cpu_info;
-
-	cpu_info = lookup_processor_type(read_cpuid_id());
-	if (!cpu_info) {
-		printk("CPU configuration botched (ID %08x), unable to continue.\n",
-		       read_cpuid_id());
-		while (1);
-	}
-
-	cpu_name = cpu_info->cpu_name;
-
-	printk("CPU: %s [%08x] revision %d\n",
-	       cpu_name, read_cpuid_id(), read_cpuid_id() & 15);
-
-	sprintf(init_utsname()->machine, ELF_PLATFORM);
 }
 
 static void __init setup_machine_fdt(phys_addr_t dt_phys)
