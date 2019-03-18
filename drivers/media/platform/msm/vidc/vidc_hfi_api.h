@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -117,7 +117,10 @@ enum hal_extradata_id {
 	HAL_EXTRADATA_DIGITAL_ZOOM,
 	HAL_EXTRADATA_LTR_INFO,
 	HAL_EXTRADATA_METADATA_MBI,
+	HAL_EXTRADATA_MASTERING_DISPLAY_COLOUR_SEI,
+	HAL_EXTRADATA_CONTENT_LIGHT_LEVEL_SEI,
 	HAL_EXTRADATA_VUI_DISPLAY_INFO,
+	HAL_EXTRADATA_VPX_COLORSPACE,
 };
 
 enum hal_property {
@@ -222,7 +225,7 @@ enum hal_property {
 	HAL_PARAM_VENC_MBI_STATISTICS_MODE,
 	HAL_PARAM_VENC_BITRATE_TYPE,
 	HAL_PARAM_VENC_VIDEO_SIGNAL_INFO,
-	HAL_PARAM_VENC_CONSTRAINED_INTRA_PRED,
+	HAL_PARAM_VENC_IFRAMESIZE_TYPE,
 };
 
 enum hal_domain {
@@ -962,14 +965,18 @@ struct hal_vpe_color_space_conversion {
 	u32 csc_limit[HAL_MAX_LIMIT_COEFFS];
 };
 
-enum hal_video_color_space {
-	HAL_VIDEO_COLOR_SPACE_601,
-	HAL_VIDEO_COLOR_SPACE_709,
+struct hal_video_signal_info {
+	u32 color_space;
+	u32 transfer_chars;
+	u32 matrix_coeffs;
+	bool full_range;
 };
 
-struct hal_video_signal_info {
-	enum hal_video_color_space color_space;
-	bool clamped;
+enum hal_iframesize_type {
+	HAL_IFRAMESIZE_TYPE_DEFAULT,
+	HAL_IFRAMESIZE_TYPE_MEDIUM,
+	HAL_IFRAMESIZE_TYPE_HUGE,
+	HAL_IFRAMESIZE_TYPE_UNLIMITED,
 };
 
 enum vidc_resource_id {
@@ -1321,6 +1328,10 @@ struct vidc_hal_sys_init_done {
 
 struct vidc_hal_session_init_done {
 	struct msm_vidc_capability capability;
+};
+
+struct vidc_hal_session_flush_done {
+	enum hal_flush flush_type;
 };
 
 enum msm_vidc_hfi_type {

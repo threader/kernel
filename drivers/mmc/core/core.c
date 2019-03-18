@@ -1050,10 +1050,10 @@ EXPORT_SYMBOL(mmc_cmdq_discard_queue);
  *	@tag: the request tag.
  *	@err: non-zero is error, success otherwise
  */
-void mmc_cmdq_post_req(struct mmc_host *host, int tag, int err)
+void mmc_cmdq_post_req(struct mmc_host *host, int tag, int err, bool is_dcmd)
 {
 	if (likely(host->cmdq_ops->post_req))
-		host->cmdq_ops->post_req(host, tag, err);
+		host->cmdq_ops->post_req(host, tag, err, is_dcmd);
 }
 EXPORT_SYMBOL(mmc_cmdq_post_req);
 
@@ -1082,6 +1082,8 @@ int mmc_cmdq_halt(struct mmc_host *host, bool halt)
 	mmc_host_clk_hold(host);
 	if (host->cmdq_ops->halt) {
 		err = host->cmdq_ops->halt(host, halt);
+		if (!err && host->ops->notify_halt)
+			host->ops->notify_halt(host, halt);
 		if (!err && halt)
 			mmc_host_set_halt(host);
 		else if (!err && !halt)
@@ -2464,6 +2466,7 @@ static int mmc_resume_bus_sync(struct mmc_host *host)
 {
 	DECLARE_WAITQUEUE(wait, current);
 	unsigned long flags;
+	int err = 0;
 
 	if (!mmc_bus_is_resuming(host))
 		return 0;
@@ -2493,7 +2496,7 @@ static int mmc_resume_bus_sync(struct mmc_host *host)
 int mmc_resume_bus(struct mmc_host *host)
 {
 	unsigned long flags;
-
+	int err = 0;
 	if (!mmc_bus_needs_resume(host))
 		return -EINVAL;
 
@@ -2511,6 +2514,15 @@ int mmc_resume_bus(struct mmc_host *host)
 		mmc_select_voltage(host, host->ocr);
 		BUG_ON(!host->bus_ops->resume);
 		host->bus_ops->resume(host);
+		if (mmc_card_cmdq(host->card)) {
+			err = mmc_cmdq_halt(host, false);
+			if (err)
+				pr_err("%s: un-halt: failed: %d\n",
+				       __func__, err);
+			else
+				mmc_card_clr_suspended(host->card);
+		}
+		host->dev_status = DEV_RESUMED;
 	}
 
 	spin_lock_irqsave(&host->lock, flags);
@@ -2521,8 +2533,8 @@ int mmc_resume_bus(struct mmc_host *host)
 	spin_unlock_irqrestore(&host->lock, flags);
 
 	mmc_bus_put(host);
-	mmc_detect_change(host, 0);
-	pr_debug("%s: Deferred resume completed\n", mmc_hostname(host));
+	mmc_release_host(host);
+
 	return 0;
 }
 
@@ -4101,6 +4113,15 @@ int mmc_power_restore_host(struct mmc_host *host)
 }
 EXPORT_SYMBOL(mmc_power_restore_host);
 
+int mmc_power_restore_broken_host(struct mmc_host *host)
+{
+	if (!host->bus_ops || host->bus_dead || !host->bus_ops->power_restore)
+		return -EINVAL;
+
+	return host->bus_ops->power_restore(host);
+}
+EXPORT_SYMBOL(mmc_power_restore_broken_host);
+
 int mmc_card_awake(struct mmc_host *host)
 {
 	int err = -ENOSYS;
@@ -4258,6 +4279,14 @@ int mmc_suspend_host(struct mmc_host *host)
 		if (host->ops->notify_pm_status)
 			host->ops->notify_pm_status(host, DEV_SUSPENDING);
 		/*
+		 * Disable clock scaling before suspend and enable it after
+		 * resume so as to avoid clock scaling decisions kicking in
+		 * during this window.
+		 */
+		if (mmc_can_scale_clk(host))
+			mmc_disable_clk_scaling(host);
+
+		/*
 		 * A long response time is not acceptable for device drivers
 		 * when doing suspend. Prevent mmc_claim_host in the suspend
 		 * sequence, to potentially wait "forever" by trying to
@@ -4320,6 +4349,8 @@ int mmc_suspend_host(struct mmc_host *host)
 		mmc_release_host(host);
 	}
 
+	if (err && mmc_can_scale_clk(host))
+		mmc_init_clk_scaling(host);
 	trace_mmc_suspend_host(mmc_hostname(host), err,
 			ktime_to_us(ktime_sub(ktime_get(), start)));
 	if (host->ops->notify_pm_status)
@@ -4388,6 +4419,7 @@ int mmc_resume_host(struct mmc_host *host)
 		}
 	}
 	host->pm_flags &= ~MMC_PM_KEEP_POWER;
+	host->pm_flags &= ~MMC_PM_WAKE_SDIO_IRQ;
 	mmc_bus_put(host);
 
 	trace_mmc_resume_host(mmc_hostname(host), err,
@@ -4544,6 +4576,7 @@ void mmc_rpm_hold(struct mmc_host *host, struct device *dev)
 		if (pm_runtime_suspended(dev))
 			BUG_ON(1);
 	}
+
 #ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
 	if (mmc_bus_manual_resume(host))
 		mmc_resume_bus_sync(host);

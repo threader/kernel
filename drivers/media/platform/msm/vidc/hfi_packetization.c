@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -636,8 +636,18 @@ static int get_hfi_extradata_index(enum hal_extradata_id index)
 	case HAL_EXTRADATA_METADATA_MBI:
 		ret = HFI_PROPERTY_PARAM_VENC_MBI_DUMPING;
 		break;
+	case HAL_EXTRADATA_MASTERING_DISPLAY_COLOUR_SEI:
+		ret =
+		HFI_PROPERTY_PARAM_VDEC_MASTERING_DISPLAY_COLOUR_SEI_EXTRADATA;
+		break;
+	case HAL_EXTRADATA_CONTENT_LIGHT_LEVEL_SEI:
+		ret = HFI_PROPERTY_PARAM_VDEC_CONTENT_LIGHT_LEVEL_SEI_EXTRADATA;
+		break;
 	case HAL_EXTRADATA_VUI_DISPLAY_INFO:
 		ret = HFI_PROPERTY_PARAM_VUI_DISPLAY_INFO_EXTRADATA;
+		break;
+	case HAL_EXTRADATA_VPX_COLORSPACE:
+		ret = HFI_PROPERTY_PARAM_VDEC_VPX_COLORSPACE_EXTRADATA;
 		break;
 	default:
 		dprintk(VIDC_WARN, "Extradata index not found: %d\n", index);
@@ -2030,47 +2040,49 @@ int create_pkt_cmd_session_set_property(
 	}
 	case HAL_PARAM_VENC_VIDEO_SIGNAL_INFO:
 	{
-		u32 color_space, matrix_coeffs, transfer_chars;
 		struct hal_video_signal_info *hal = pdata;
 		struct hfi_video_signal_metadata *signal_info =
 			(struct hfi_video_signal_metadata *)
 			&pkt->rg_property_data[1];
 
-		switch (hal->color_space) {
-		/* See colour_primaries of ISO/IEC 14496 for significance */
-		case HAL_VIDEO_COLOR_SPACE_601:
-			color_space = 5;
-			transfer_chars = 6;
-			matrix_coeffs = 5;
-			break;
-		case HAL_VIDEO_COLOR_SPACE_709:
-			color_space = 1;
-			transfer_chars = 1;
-			matrix_coeffs = 1;
-			break;
-		default:
-			return -ENOTSUPP;
-		}
-
 		signal_info->enable = true;
-		signal_info->video_format = 5;
-		signal_info->video_full_range = !hal->clamped;
-		signal_info->color_description = 1;
-		signal_info->color_primaries = color_space;
-		signal_info->transfer_characteristics = transfer_chars;
-		signal_info->matrix_coeffs = matrix_coeffs;
+		signal_info->video_format = MSM_VIDC_NTSC;
+		signal_info->video_full_range = hal->full_range;
+		signal_info->color_description = MSM_VIDC_COLOR_DESC_PRESENT;
+		signal_info->color_primaries = hal->color_space;
+		signal_info->transfer_characteristics = hal->transfer_chars;
+		signal_info->matrix_coeffs = hal->matrix_coeffs;
 
 		pkt->rg_property_data[0] =
 			HFI_PROPERTY_PARAM_VENC_VIDEO_SIGNAL_INFO;
 		pkt->size += sizeof(u32) + sizeof(*signal_info);
-                break;
-        }
-	case HAL_PARAM_VENC_CONSTRAINED_INTRA_PRED:
+		break;
+	}
+	case HAL_PARAM_VENC_IFRAMESIZE_TYPE:
 	{
-		create_pkt_enable(pkt->rg_property_data,
-			HFI_PROPERTY_PARAM_VENC_CONSTRAINED_INTRA_PRED,
-			((struct hal_enable *)pdata)->enable);
-		pkt->size += sizeof(u32) + sizeof(struct hfi_enable);
+		enum hal_iframesize_type hal =
+			*(enum hal_iframesize_type *)pdata;
+		struct hfi_iframe_size *hfi = (struct hfi_iframe_size *)
+			&pkt->rg_property_data[1];
+
+		switch (hal) {
+		case HAL_IFRAMESIZE_TYPE_DEFAULT:
+			hfi->type = HFI_IFRAME_SIZE_DEFAULT;
+			break;
+		case HAL_IFRAMESIZE_TYPE_MEDIUM:
+			hfi->type = HFI_IFRAME_SIZE_MEDIUM;
+			break;
+		case HAL_IFRAMESIZE_TYPE_HUGE:
+			hfi->type = HFI_IFRAME_SIZE_HIGH;
+			break;
+		case HAL_IFRAMESIZE_TYPE_UNLIMITED:
+			hfi->type = HFI_IFRAME_SIZE_UNLIMITED;
+			break;
+		default:
+			return -ENOTSUPP;
+		}
+		pkt->rg_property_data[0] = HFI_PROPERTY_PARAM_VENC_IFRAMESIZE;
+		pkt->size += sizeof(u32) + sizeof(struct hfi_iframe_size);
 		break;
 	}
 	/* FOLLOWING PROPERTIES ARE NOT IMPLEMENTED IN CORE YET */

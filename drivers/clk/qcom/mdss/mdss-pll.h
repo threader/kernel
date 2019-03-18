@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2015, 2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -48,6 +48,11 @@ enum {
 	MDSS_PLL_TARGET_8976,
 };
 
+enum {
+	SSC_CENTRE_SPREAD,
+	SSC_DOWN_SPREAD,
+};
+
 #define DFPS_MAX_NUM_OF_FRAME_RATES 10
 
 struct dfps_panel_info {
@@ -72,6 +77,7 @@ struct dfps_info {
 	struct dfps_panel_info panel_dfps;
 	struct dfps_codes_info codes_dfps[DFPS_MAX_NUM_OF_FRAME_RATES];
 	void *dfps_fb_base;
+	uint32_t chip_serial;
 };
 
 struct mdss_pll_resources {
@@ -131,6 +137,14 @@ struct mdss_pll_resources {
 	 * 90 phase difference between bit and byte clock frequency.
 	 */
 	bool		pll_en_90_phase;
+
+	/*
+	 * DSI PLL SSC properties
+	 */
+	bool		ssc_en;
+	uint32_t	ssc_freq;
+	uint32_t	ssc_ppm;
+	uint32_t	spread_mode;
 
 	/*
 	 * handoff_status is true of pll is already enabled by bootloader with
