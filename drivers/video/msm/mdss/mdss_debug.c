@@ -40,6 +40,8 @@
 #define PANEL_DATA_NODE_LEN 80
 
 static DEFINE_MUTEX(mdss_debug_lock);
+/* Hex number + whitespace */
+#define NEXT_VALUE_OFFSET 3
 
 static char panel_reg[2] = {DEFAULT_READ_PANEL_POWER_MODE_REG, 0x00};
 
@@ -139,7 +141,7 @@ static ssize_t panel_debug_base_reg_write(struct file *file,
 	struct mdss_debug_base *dbg = file->private_data;
 	char buf[PANEL_TX_MAX_BUF] = {0x0};
 	char reg[PANEL_TX_MAX_BUF] = {0x0};
-	u32 len = 0, step = 0, value = 0;
+	u32 len = 0, value = 0;
 	char *bufp;
 
 	struct mdss_data_type *mdata = mdss_res;
@@ -162,13 +164,21 @@ static ssize_t panel_debug_base_reg_write(struct file *file,
 	buf[count] = 0;	/* end of string */
 
 	bufp = buf;
-	while (sscanf(bufp, "%x%n", &value, &step) > 0) {
+	/* End of a hex value in given string */
+	bufp[NEXT_VALUE_OFFSET - 1] = 0;
+	while (kstrtouint(bufp, 16, &value) == 0) {
 		reg[len++] = value;
 		if (len >= PANEL_TX_MAX_BUF) {
 			pr_err("wrong input reg len\n");
 			return -EFAULT;
 		}
-		bufp += step;
+		bufp += NEXT_VALUE_OFFSET;
+		if ((bufp >= (buf + count)) || (bufp < buf)) {
+			pr_warn("%s,buffer out-of-bounds\n", __func__);
+			break;
+		}
+		/* End of a hex value in given string */
+		bufp[NEXT_VALUE_OFFSET - 1] = 0;
 	}
 	if (len < PANEL_CMD_MIN_TX_COUNT) {
 		pr_err("wrong input reg len\n");
@@ -193,7 +203,8 @@ static ssize_t panel_debug_base_reg_write(struct file *file,
 	if (mdata->debug_inf.debug_enable_clock)
 		mdata->debug_inf.debug_enable_clock(1);
 
-	mdss_dsi_cmdlist_put(ctrl_pdata, &cmdreq);
+	if (ctrl_pdata->ctrl_state & CTRL_STATE_PANEL_INIT)
+		mdss_dsi_cmdlist_put(ctrl_pdata, &cmdreq);
 
 	if (mdata->debug_inf.debug_enable_clock)
 		mdata->debug_inf.debug_enable_clock(0);
@@ -212,6 +223,7 @@ static ssize_t panel_debug_base_reg_read(struct file *file,
 	struct mdss_panel_data *panel_data = ctl->panel_data;
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = container_of(panel_data,
 					struct mdss_dsi_ctrl_pdata, panel_data);
+	int rc = -EFAULT;
 
 	if (!dbg)
 		return -ENODEV;
@@ -235,7 +247,8 @@ static ssize_t panel_debug_base_reg_read(struct file *file,
 
 	if (!rx_buf || !panel_reg_buf) {
 		pr_err("not enough memory to hold panel reg dump\n");
-		return -ENOMEM;
+		rc = -ENOMEM;
+		goto read_reg_fail;
 	}
 
 	if (mdata->debug_inf.debug_enable_clock)
@@ -272,7 +285,7 @@ read_reg_fail:
 	kfree(rx_buf);
 	kfree(panel_reg_buf);
 	mutex_unlock(&mdss_debug_lock);
-	return -EFAULT;
+	return rc;
 }
 
 static const struct file_operations panel_off_fops = {
@@ -396,6 +409,9 @@ static ssize_t mdss_debug_base_offset_write(struct file *file,
 
 	buf[count] = 0;	/* end of string */
 
+	if (off % sizeof(u32))
+		return -EINVAL;
+
 	sscanf(buf, "%5x %x", &off, &cnt);
 
 	if (off > dbg->max_offset)
@@ -470,6 +486,9 @@ static ssize_t mdss_debug_base_reg_write(struct file *file,
 	if (cnt < 2)
 		return -EFAULT;
 
+	if (off % sizeof(u32))
+		return -EFAULT;
+
 	if (off >= dbg->max_offset)
 		return -EFAULT;
 
@@ -514,6 +533,9 @@ static ssize_t mdss_debug_base_reg_read(struct file *file,
 			mutex_unlock(&mdss_debug_lock);
 			return -ENOMEM;
 		}
+
+		if (dbg->off % sizeof(u32))
+			return -EFAULT;
 
 		ptr = dbg->base + dbg->off;
 		tot = 0;
@@ -1370,7 +1392,7 @@ int mdss_misr_set(struct mdss_data_type *mdata,
 	bool use_mdp_up_misr = false;
 
 	if (!mdata || !req || !ctl) {
-		pr_err("Invalid input params: mdata = %p req = %p ctl = %p",
+		pr_err("Invalid input params: mdata = %pK req = %pK ctl = %pK",
 			mdata, req, ctl);
 		return -EINVAL;
 	}

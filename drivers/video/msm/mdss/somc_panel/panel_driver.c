@@ -3306,11 +3306,11 @@ int mdss_dsi_panel_timing_switch(struct mdss_dsi_ctrl_pdata *ctrl,
 	if (!timing->clk_rate)
 		ctrl->refresh_clk_rate = true;
 
-#ifdef KERN318_FEATURESET
+//#ifdef KERN318_FEATURESET
 	mdss_dsi_clk_refresh(&ctrl->panel_data, ctrl->update_phy_timing);
-#else
-	mdss_dsi_clk_refresh(&ctrl->panel_data);
-#endif
+//#else
+//	mdss_dsi_clk_refresh(&ctrl->panel_data);
+//#endif
 
 	return 0;
 }
