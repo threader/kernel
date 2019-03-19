@@ -750,10 +750,9 @@ static int msm_lsm_ioctl_shared(struct snd_pcm_substream *substream,
 			dev_err(rtd->dev,
 				"%s: lsm open failed, %d\n",
 				__func__, ret);
-			q6lsm_client_free(prtd->lsm_client);
-			kfree(prtd);
 			return ret;
 		}
+		prtd->lsm_client->opened = true;
 		dev_dbg(rtd->dev, "%s: Session_ID = %d, APP ID = %d\n",
 			__func__,
 			prtd->lsm_client->session,
@@ -1149,7 +1148,7 @@ static int msm_lsm_ioctl_compat(struct snd_pcm_substream *substream,
 		}
 
 		size = sizeof(*user) + userarg32.payload_size;
-		user = kmalloc(size, GFP_KERNEL);
+		user = kzalloc(size, GFP_KERNEL);
 		if (!user) {
 			dev_err(rtd->dev,
 				"%s: Allocation failed event status size %d\n",
@@ -1170,7 +1169,7 @@ static int msm_lsm_ioctl_compat(struct snd_pcm_substream *substream,
 			err = -EFAULT;
 		}
 		if (!err) {
-			user32 = kmalloc(size, GFP_KERNEL);
+			user32 = kzalloc(size, GFP_KERNEL);
 			if (!user32) {
 				dev_err(rtd->dev,
 					"%s: Allocation event user status size %d\n",
@@ -1583,7 +1582,7 @@ static int msm_lsm_ioctl(struct snd_pcm_substream *substream,
 
 		size = sizeof(struct snd_lsm_event_status) +
 		userarg.payload_size;
-		user = kmalloc(size, GFP_KERNEL);
+		user = kzalloc(size, GFP_KERNEL);
 		if (!user) {
 			dev_err(rtd->dev,
 				"%s: Allocation failed event status size %d\n",
@@ -1683,6 +1682,7 @@ static int msm_lsm_open(struct snd_pcm_substream *substream)
 		runtime->private_data = NULL;
 		return -ENOMEM;
 	}
+	prtd->lsm_client->opened = false;
 	return 0;
 }
 
@@ -1755,7 +1755,10 @@ static int msm_lsm_close(struct snd_pcm_substream *substream)
 				 __func__);
 	}
 
-	q6lsm_close(prtd->lsm_client);
+	if (prtd->lsm_client->opened) {
+		q6lsm_close(prtd->lsm_client);
+		prtd->lsm_client->opened = false;
+	}
 	q6lsm_client_free(prtd->lsm_client);
 
 	spin_lock_irqsave(&prtd->event_lock, flags);
@@ -1764,6 +1767,7 @@ static int msm_lsm_close(struct snd_pcm_substream *substream)
 	spin_unlock_irqrestore(&prtd->event_lock, flags);
 	mutex_destroy(&prtd->lsm_api_lock);
 	kfree(prtd);
+	runtime->private_data = NULL;
 
 	return 0;
 }

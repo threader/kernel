@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -332,6 +332,14 @@ static int wcd_cpe_load_each_segment(struct wcd_cpe_core *core,
 	else {
 		dev_err(core->dev, "%s invalid flags 0x%x\n",
 			__func__, phdr->p_flags);
+		goto done;
+	}
+
+	if (phdr->p_filesz != split_fw->size) {
+		dev_err(core->dev,
+			"%s: %s size mismatch, phdr_size: 0x%x fw_size: 0x%zx",
+			__func__, split_fname, phdr->p_filesz, split_fw->size);
+		ret = -EINVAL;
 		goto done;
 	}
 
@@ -1737,10 +1745,10 @@ static ssize_t fw_name_store(struct wcd_cpe_core *core,
 	if (pos)
 		copy_count = pos - buf;
 
-	if (copy_count > WCD_CPE_IMAGE_FNAME_MAX) {
+	if (copy_count > (WCD_CPE_IMAGE_FNAME_MAX - 1)) {
 		dev_err(core->dev,
 			"%s: Invalid length %d, max allowed %d\n",
-			__func__, copy_count, WCD_CPE_IMAGE_FNAME_MAX);
+			__func__, copy_count, WCD_CPE_IMAGE_FNAME_MAX - 1);
 		return -EINVAL;
 	}
 
@@ -4309,7 +4317,7 @@ done:
  *	      parameters are to be set
  */
 static int wcd_cpe_afe_set_params(void *core_handle,
-		struct wcd_cpe_afe_port_cfg *afe_cfg)
+		struct wcd_cpe_afe_port_cfg *afe_cfg, bool afe_mad_ctl)
 {
 	struct cpe_afe_params afe_params;
 	struct cpe_afe_hw_mad_ctrl *hw_mad_ctrl = &afe_params.hw_mad_ctrl;
@@ -4352,7 +4360,7 @@ static int wcd_cpe_afe_set_params(void *core_handle,
 	hw_mad_ctrl->param.p_size.sr.reserved = 0;
 	hw_mad_ctrl->minor_version = 1;
 	hw_mad_ctrl->mad_type = MAD_TYPE_AUDIO;
-	hw_mad_ctrl->mad_enable = 1;
+	hw_mad_ctrl->mad_enable = afe_mad_ctl;
 
 	port_cfg->param.module_id = CPE_AFE_MODULE_AUDIO_DEV_INTERFACE;
 	port_cfg->param.param_id = CPE_AFE_PARAM_ID_GENERIC_PORT_CONFIG;
