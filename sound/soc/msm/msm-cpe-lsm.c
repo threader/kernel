@@ -134,6 +134,7 @@ struct cpe_priv {
 	struct snd_soc_codec *codec;
 	struct wcd_cpe_lsm_ops lsm_ops;
 	struct wcd_cpe_afe_ops afe_ops;
+	bool afe_mad_ctl;
 };
 
 struct cpe_lsm_data {
@@ -153,6 +154,29 @@ struct cpe_lsm_data {
 	u8 *ev_det_payload;
 
 	bool cpe_prepared;
+};
+
+static int msm_cpe_afe_mad_ctl_get(struct snd_kcontrol *kcontrol,
+					struct snd_ctl_elem_value *ucontrol)
+{
+	struct cpe_priv *cpe = kcontrol->private_data;
+
+	ucontrol->value.integer.value[0] = cpe->afe_mad_ctl;
+	return 0;
+}
+
+static int msm_cpe_afe_mad_ctl_put(struct snd_kcontrol *kcontrol,
+					struct snd_ctl_elem_value *ucontrol)
+{
+	struct cpe_priv *cpe = kcontrol->private_data;
+
+	cpe->afe_mad_ctl = ucontrol->value.integer.value[0];
+	return 0;
+}
+
+static struct snd_kcontrol_new msm_cpe_kcontrols[] = {
+	SOC_SINGLE_EXT("CPE AFE MAD Enable", SND_SOC_NOPM, 0, 1, 0,
+			msm_cpe_afe_mad_ctl_get, msm_cpe_afe_mad_ctl_put),
 };
 
 /*
@@ -2756,7 +2780,7 @@ static int msm_cpe_lsm_prepare(struct snd_pcm_substream *substream)
 	afe_cfg->sample_rate = 16000;
 
 	rc = afe_ops->afe_set_params(cpe->core_handle,
-				     afe_cfg);
+				     afe_cfg, cpe->afe_mad_ctl);
 	if (rc != 0) {
 		dev_err(rtd->dev,
 			"%s: cpe afe params failed, err = %d\n",
