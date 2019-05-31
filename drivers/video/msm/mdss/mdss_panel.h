@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -110,17 +110,15 @@ enum {
 
 enum {
 	MODE_GPIO_NOT_VALID = 0,
-	MODE_SEL_SPLIT,
-	MODE_SEL_DSC_SINGLE,
 	MODE_GPIO_HIGH,
 	MODE_GPIO_LOW,
 };
-/*
+
 enum {
 	MODE_SEL_SPLIT = 0,
 	MODE_SEL_DSC_SINGLE,
 };
-*/
+
 struct mdss_rect {
 	u16 x;
 	u16 y;
@@ -159,11 +157,6 @@ struct mdss_panel_cfg {
 
 #define MDP_INTF_DSI_CMD_FIFO_UNDERFLOW		0x0001
 #define MDP_INTF_DSI_VIDEO_FIFO_OVERFLOW	0x0002
-
-
-enum {
-	MDP_INTF_CALLBACK_DSI_WAIT,
-};
 
 struct mdss_intf_recovery {
 	void (*fxn)(void *ctx, int event);
@@ -216,8 +209,7 @@ struct mdss_intf_recovery {
  *				- 1: update to command mode
  * @MDSS_EVENT_REGISTER_RECOVERY_HANDLER: Event to recover the interface in
  *					case there was any errors detected.
- * @MDSS_EVENT_REGISTER_MDP_CALLBACK: Event to callback to the MDP driver.
- * @MDSS_EVENT_DSI_PANEL_STATUS: Event to check the panel status
+ * @ MDSS_EVENT_DSI_PANEL_STATUS:Event to check the panel status
  *				<= 0: panel check fail
  *				>  0: panel check success
  * @MDSS_EVENT_DSI_DYNAMIC_SWITCH: Send DCS command to panel to initiate
@@ -229,8 +221,6 @@ struct mdss_intf_recovery {
  *				- MIPI_CMD_PANEL: switch to command mode
  * @MDSS_EVENT_DSI_RESET_WRITE_PTR: Reset the write pointer coordinates on
  *				the panel.
- * @MDSS_EVENT_PANEL_TIMING_SWITCH: Panel timing switch is requested.
- *				Argument provided is new panel timing.
  */
 enum mdss_intf_events {
 	MDSS_EVENT_RESET = 1,
@@ -254,7 +244,6 @@ enum mdss_intf_events {
 	MDSS_EVENT_DSI_STREAM_SIZE,
 	MDSS_EVENT_DSI_UPDATE_PANEL_DATA,
 	MDSS_EVENT_REGISTER_RECOVERY_HANDLER,
-	MDSS_EVENT_REGISTER_MDP_CALLBACK,
 	MDSS_EVENT_DSI_PANEL_STATUS,
 	MDSS_EVENT_DSI_DYNAMIC_SWITCH,
 	MDSS_EVENT_DSI_RECONFIG_CMD,
@@ -359,29 +348,7 @@ enum dynamic_switch_modes {
 	SWITCH_TO_VIDEO_MODE,
 	SWITCH_RESOLUTION,
 };
-
-/**
- * struct mdss_panel_timing - structure for panel timing information
- * @list: List head ptr to track within panel data timings list
- * @name: A unique name of this timing that can be used to identify it
- * @xres: Panel width
- * @yres: Panel height
- * @h_back_porch: Horizontal back porch
- * @h_front_porch: Horizontal front porch
- * @h_pulse_width: Horizontal pulse width
- * @hsync_skew: Horizontal sync skew
- * @v_back_porch: Vertical back porch
- * @v_front_porch: Vertical front porch
- * @v_pulse_width: Vertical pulse width
- * @border_top: Border color on top
- * @border_bottom: Border color on bottom
- * @border_left: Border color on left
- * @border_right: Border color on right
- * @clk_rate: Pixel clock rate of this panel timing
- * @frame_rate: Display refresh rate
- * @fbc: Framebuffer compression parameters for this display timing
- * @te: Tearcheck parameters for this display timing
- **/
+ 
 struct mipi_panel_info {
 	char boot_mode;	/* identify if mode switched from starting mode */
 	char mode;		/* video/cmd */
@@ -468,19 +435,12 @@ struct lvds_panel_info {
 };
 
 enum {
-	DSC_PATH_1P1D,
-	DSC_PATH_MERGE_1P1D,
-	DSC_PATH_SPLIT_1P2D
-};
-
-enum {
 	COMPRESSION_NONE,
 	COMPRESSION_DSC,
 	COMPRESSION_FBC
 };
 
 struct dsc_desc {
-	int data_path_model;		/* multiplex + split_panel */
 	int ich_reset_value;
 	int ich_reset_override;
 	int initial_lines;
@@ -701,6 +661,28 @@ struct mdss_panel_info {
 #endif
 };
 
+/**
+ * struct mdss_panel_timing - structure for panel timing information
+ * @list: List head ptr to track within panel data timings list
+ * @name: A unique name of this timing that can be used to identify it
+ * @xres: Panel width
+ * @yres: Panel height
+ * @h_back_porch: Horizontal back porch
+ * @h_front_porch: Horizontal front porch
+ * @h_pulse_width: Horizontal pulse width
+ * @hsync_skew: Horizontal sync skew
+ * @v_back_porch: Vertical back porch
+ * @v_front_porch: Vertical front porch
+ * @v_pulse_width: Vertical pulse width
+ * @border_top: Border color on top
+ * @border_bottom: Border color on bottom
+ * @border_left: Border color on left
+ * @border_right: Border color on right
+ * @clk_rate: Pixel clock rate of this panel timing
+ * @frame_rate: Display refresh rate
+ * @fbc: Framebuffer compression parameters for this display timing
+ * @te: Tearcheck parameters for this display timing
+ **/
 struct mdss_panel_timing {
 	struct list_head list;
 	const char *name;
@@ -777,7 +759,6 @@ struct mdss_panel_data {
 
 struct mdss_panel_debugfs_info {
 	struct dentry *root;
-	struct dentry *parent;
 	struct mdss_panel_info panel_info;
 	u32 override_flag;
 	struct mdss_panel_debugfs_info *next;
@@ -948,34 +929,6 @@ static inline bool mdss_panel_is_power_on_ulp(int panel_power_state)
 }
 
 /**
- * mdss_panel_calc_frame_rate() - calculate panel frame rate based on panel timing
- *				information.
- * @panel_info:	Pointer to panel info containing all panel information
- */
-static inline u8 mdss_panel_calc_frame_rate(struct mdss_panel_info *pinfo)
-{
-		u32 pixel_total = 0;
-		u8 frame_rate = 0;
-
-		pixel_total = (pinfo->lcdc.h_back_porch +
-			  pinfo->lcdc.h_front_porch +
-			  pinfo->lcdc.h_pulse_width +
-			  pinfo->xres) *
-			 (pinfo->lcdc.v_back_porch +
-			  pinfo->lcdc.v_front_porch +
-			  pinfo->lcdc.v_pulse_width +
-			  pinfo->yres);
-
-		if (pinfo->clk_rate && pixel_total)
-			frame_rate = DIV_ROUND_CLOSEST(pinfo->clk_rate,
-								pixel_total);
-		else
-			frame_rate = DEFAULT_FRAME_RATE;
-
-		return frame_rate;
-}
-
-/**
  * mdss_panel_intf_type: - checks if a given intf type is primary
  * @intf_val: panel interface type of the individual controller
  *
@@ -1017,7 +970,6 @@ int mdss_panel_debugfs_init(struct mdss_panel_info *panel_info,
 		char const *panel_name);
 void mdss_panel_debugfs_cleanup(struct mdss_panel_info *panel_info);
 void mdss_panel_debugfsinfo_to_panelinfo(struct mdss_panel_info *panel_info);
-
 /*
  * mdss_panel_info_from_timing() - populate panel info from panel timing
  * @pt:		pointer to source panel timing

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -432,7 +432,7 @@ struct mdss_pp_res_type {
 	struct mdp_hist_lut_data enhist_disp_cfg[MDSS_BLOCK_DISP_NUM];
 	struct mdp_dither_cfg_data dither_disp_cfg[MDSS_BLOCK_DISP_NUM];
 	struct mdp_gamut_cfg_data gamut_disp_cfg[MDSS_BLOCK_DISP_NUM];
-	uint16_t gamut_tbl[MDSS_BLOCK_DISP_NUM][3 * GAMUT_TOTAL_TABLE_SIZE];
+	uint16_t gamut_tbl[MDSS_BLOCK_DISP_NUM][GAMUT_TOTAL_TABLE_SIZE];
 	u32 hist_data[MDSS_BLOCK_DISP_NUM][HIST_V_SIZE];
 	struct pp_sts_type pp_disp_sts[MDSS_MAX_MIXER_DISP_NUM];
 	/* physical info */
@@ -1927,25 +1927,6 @@ static int pp_dspp_setup(u32 disp_num, struct mdss_mdp_mixer *mixer)
 		pr_debug("skip configuring dspp features\n");
 		goto opmode_config;
 	}
-	pp_pcc_config(flags, base + MDSS_MDP_REG_DSPP_PCC_BASE, pp_sts,
-					&mdss_pp_res->pcc_disp_cfg[disp_num]);
-
-	pp_igc_config(flags, mdata->mdp_base + MDSS_MDP_REG_IGC_DSPP_BASE,
-				pp_sts, &mdss_pp_res->igc_disp_cfg[disp_num],
-				dspp_num, mdata->ndspp);
-
-	if (flags & PP_FLAGS_DIRTY_PGC) {
-		pgc_config = &mdss_pp_res->pgc_disp_cfg[disp_num];
-		if (pgc_config->flags & MDP_PP_OPS_WRITE) {
-			addr = base + MDSS_MDP_REG_DSPP_GC_BASE;
-			pp_update_argc_lut(addr, pgc_config);
-		}
-		if (pgc_config->flags & MDP_PP_OPS_DISABLE)
-			pp_sts->pgc_sts &= ~PP_STS_ENABLE;
-		else if (pgc_config->flags & MDP_PP_OPS_ENABLE)
-			pp_sts->pgc_sts |= PP_STS_ENABLE;
-		pp_sts_set_split_bits(&pp_sts->pgc_sts, pgc_config->flags);
-	}
 
 	if (mdata->mdp_rev >= MDSS_MDP_HW_REV_103) {
 		pp_pa_v2_config(flags, base + MDSS_MDP_REG_DSPP_PA_BASE, pp_sts,
@@ -1955,6 +1936,12 @@ static int pp_dspp_setup(u32 disp_num, struct mdss_mdp_mixer *mixer)
 		pp_pa_config(flags, base + MDSS_MDP_REG_DSPP_PA_BASE, pp_sts,
 				&mdss_pp_res->pa_disp_cfg[disp_num]);
 
+	pp_pcc_config(flags, base + MDSS_MDP_REG_DSPP_PCC_BASE, pp_sts,
+					&mdss_pp_res->pcc_disp_cfg[disp_num]);
+
+	pp_igc_config(flags, mdata->mdp_base + MDSS_MDP_REG_IGC_DSPP_BASE,
+				pp_sts, &mdss_pp_res->igc_disp_cfg[disp_num],
+				dspp_num, mdata->ndspp);
 
 	pp_enhist_config(flags, base, pp_sts,
 				&mdss_pp_res->enhist_disp_cfg[disp_num]);
@@ -1977,6 +1964,18 @@ static int pp_dspp_setup(u32 disp_num, struct mdss_mdp_mixer *mixer)
 		pp_gamut_config(&mdss_pp_res->gamut_disp_cfg[disp_num], base,
 				pp_sts);
 
+	if (flags & PP_FLAGS_DIRTY_PGC) {
+		pgc_config = &mdss_pp_res->pgc_disp_cfg[disp_num];
+		if (pgc_config->flags & MDP_PP_OPS_WRITE) {
+			addr = base + MDSS_MDP_REG_DSPP_GC_BASE;
+			pp_update_argc_lut(addr, pgc_config);
+		}
+		if (pgc_config->flags & MDP_PP_OPS_DISABLE)
+			pp_sts->pgc_sts &= ~PP_STS_ENABLE;
+		else if (pgc_config->flags & MDP_PP_OPS_ENABLE)
+			pp_sts->pgc_sts |= PP_STS_ENABLE;
+		pp_sts_set_split_bits(&pp_sts->pgc_sts, pgc_config->flags);
+	}
 opmode_config:
 	pp_dspp_opmode_config(ctl, dspp_num, pp_sts, mdata->mdp_rev, &opmode);
 
@@ -3036,10 +3035,8 @@ int mdss_mdp_pcc_config(struct mdp_pcc_cfg_data *config,
 	} else {
 		mdss_pp_res->pcc_disp_cfg[disp_num] = *config;
 		mdss_pp_res->pp_disp_flags[disp_num] |= PP_FLAGS_DIRTY_PCC;
-		if (config->ops & MDP_PP_OPS_DEFER_ENABLE) {
-			mdss_pp_res->pp_disp_flags[disp_num] &=
-				~PP_FLAGS_DIRTY_PCC;
-		}
+		if(config->ops & MDP_PP_OPS_DEFER_ENABLE)
+			mdss_pp_res->pp_disp_flags[disp_num] &= ~PP_FLAGS_DIRTY_PCC;
 	}
 
 pcc_config_exit:
@@ -3240,10 +3237,8 @@ int mdss_mdp_igc_lut_config(struct mdp_igc_lut_data *config,
 		mdss_pp_res->igc_disp_cfg[disp_num].c2_data =
 			&mdss_pp_res->igc_lut_c2[disp_num][0];
 		mdss_pp_res->pp_disp_flags[disp_num] |= PP_FLAGS_DIRTY_IGC;
-		if (config->ops & MDP_PP_OPS_DEFER_ENABLE) {
-			mdss_pp_res->pp_disp_flags[disp_num] &=
-				~PP_FLAGS_DIRTY_IGC;
-		}
+		if(config->ops & MDP_PP_OPS_DEFER_ENABLE)
+			mdss_pp_res->pp_disp_flags[disp_num] &= ~PP_FLAGS_DIRTY_IGC;
 	}
 
 igc_config_exit:
@@ -3427,7 +3422,6 @@ int mdss_pp_dirty_flags_config(struct mdp_dirty_flag_cfg *config)
 {
 	int ret = 0;
 	u32 disp_num;
-
 	disp_num = config->block - MDP_LOGICAL_BLOCK_DISP_0;
 	mutex_lock(&mdss_pp_mutex);
 	mdss_pp_res->pp_disp_flags[disp_num] |= config->dirty_flag_mask;
@@ -3574,10 +3568,9 @@ int mdss_mdp_argc_config(struct mdp_pgc_lut_data *config,
 		else if (PP_LOCAT(config->block) == MDSS_PP_DSPP_CFG) {
 			mdss_pp_res->pp_disp_flags[disp_num] |=
 				PP_FLAGS_DIRTY_PGC;
-			if (config->flags & MDP_PP_OPS_DEFER_ENABLE) {
+			if(config->flags & MDP_PP_OPS_DEFER_ENABLE)
 				mdss_pp_res->pp_disp_flags[disp_num] &=
-					~PP_FLAGS_DIRTY_PGC;
-			}
+				    ~PP_FLAGS_DIRTY_PGC;
 		}
 	}
 argc_config_exit:
@@ -5910,6 +5903,9 @@ static int is_valid_calib_addr(void *addr, u32 operation)
 	int ret = 0;
 	char __iomem *ptr = addr;
 	char __iomem *mixer_base = mdss_res->mixer_intf->base;
+	char __iomem *rgb_base   = mdss_res->rgb_pipes->base;
+	char __iomem *dma_base   = mdss_res->dma_pipes->base;
+	char __iomem *vig_base   = mdss_res->vig_pipes->base;
 	char __iomem *ctl_base   = mdss_res->ctl_off->base;
 	char __iomem *dspp_base  = mdss_res->mixer_intf->dspp_base;
 
@@ -5941,20 +5937,17 @@ static int is_valid_calib_addr(void *addr, u32 operation)
 			if (ret)
 				goto valid_addr;
 		}
-		if (mdss_res->vig_pipes &&
-		    ptr >= mdss_res->vig_pipes->base) {
+		if (ptr >= vig_base) {
 			ret = is_valid_calib_vig_addr(ptr);
 			if (ret)
 				goto valid_addr;
 		}
-		if (mdss_res->rgb_pipes &&
-		    ptr >= mdss_res->rgb_pipes->base) {
+		if (ptr >= rgb_base) {
 			ret = is_valid_calib_rgb_addr(ptr);
 			if (ret)
 				goto valid_addr;
 		}
-		if (mdss_res->dma_pipes &&
-		    ptr >= mdss_res->dma_pipes->base) {
+		if (ptr >= dma_base) {
 			ret = is_valid_calib_dma_addr(ptr);
 			if (ret)
 				goto valid_addr;
