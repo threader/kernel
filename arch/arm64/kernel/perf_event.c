@@ -360,7 +360,7 @@ static int
 validate_event(struct pmu *pmu, struct pmu_hw_events *hw_events,
 				struct perf_event *event)
 {
-	struct arm_pmu *armpmu;
+	struct arm_pmu *armpmu = to_arm_pmu(event->pmu);
 	struct hw_perf_event fake_event = event->hw;
 	struct pmu *leader_pmu = event->group_leader->pmu;
 
@@ -381,7 +381,6 @@ validate_event(struct pmu *pmu, struct pmu_hw_events *hw_events,
 	if (event->state == PERF_EVENT_STATE_OFF && !event->attr.enable_on_exec)
 		return 1;
 
-	armpmu = to_arm_pmu(event->pmu);
 	return armpmu->get_event_idx(hw_events, &fake_event) >= 0;
 }
 

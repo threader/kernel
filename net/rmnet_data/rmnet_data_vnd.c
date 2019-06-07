@@ -553,7 +553,7 @@ int rmnet_vnd_init(void)
  *      - RMNET_CONFIG_UNKNOWN_ERROR if register_netdevice() fails
  */
 int rmnet_vnd_create_dev(int id, struct net_device **new_device,
-			 const char *prefix)
+			 const char *prefix, int use_name)
 {
 	struct net_device *dev;
 	char dev_prefix[IFNAMSIZ];
@@ -569,10 +569,12 @@ int rmnet_vnd_create_dev(int id, struct net_device **new_device,
 		return RMNET_CONFIG_DEVICE_IN_USE;
 	}
 
-	if (!prefix)
+	if (!prefix && !use_name)
 		p = scnprintf(dev_prefix, IFNAMSIZ, "%s%%d",
 			  RMNET_DATA_DEV_NAME_STR);
-	else
+	else if (prefix && use_name)
+		p = scnprintf(dev_prefix, IFNAMSIZ, "%s", prefix);
+	else if (prefix && !use_name)
 		p = scnprintf(dev_prefix, IFNAMSIZ, "%s%%d",
 			  prefix);
 	if (p >= (IFNAMSIZ-1)) {
@@ -696,6 +698,45 @@ int rmnet_vnd_get_name(int id, char *name, int name_len)
 		return -EINVAL;
 	}
 	LOGL("Found mapping [%d]->\"%s\"", id, name);
+
+	return 0;
+}
+
+/**
+ * rmnet_vnd_get_name() - Gets the string name of a VND based on ID
+ * @id:         Virtual device node id
+ * @name:       Buffer to store name of virtual device node
+ * @name_len:   Length of name buffer
+ *
+ * Copies the name of the virtual device node into the users buffer. Will throw
+ * an error if the buffer is null, or too small to hold the device name.
+ *
+ * Return:
+ *      - 0 if successful
+ *      - -EINVAL if name is null
+ *      - -EINVAL if id is invalid or not in range
+ *      - -EINVAL if name is too small to hold things
+ */
+int rmnet_vnd_get_name(int id, char *name, int name_len)
+{
+	int p;
+
+	if (!name) {
+		LOGM("%s(): Bad arguments; name buffer null", __func__);
+		return -EINVAL;
+	}
+
+	if ((id < 0) || (id >= RMNET_DATA_MAX_VND) || !rmnet_devices[id]) {
+		LOGM("%s(): Invalid id [%d]", __func__, id);
+		return -EINVAL;
+	}
+
+	p = strlcpy(name, rmnet_devices[id]->name, name_len);
+	if (p >= name_len) {
+		LOGM("%s(): Buffer to small to fit device name", __func__);
+		return -EINVAL;
+	}
+	LOGL("%s(): Found mapping [%d]->\"%s\"", __func__, id, name);
 
 	return 0;
 }

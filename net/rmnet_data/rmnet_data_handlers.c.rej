@@ -1,0 +1,63 @@
+--- net/rmnet_data/rmnet_data_handlers.c
++++ net/rmnet_data/rmnet_data_handlers.c
+@@ -164,6 +164,20 @@ static rx_handler_result_t rmnet_bridge_handler(struct sk_buff *skb,
+ 	return RX_HANDLER_CONSUMED;
+ }
+ 
++#ifdef NET_SKBUFF_DATA_USES_OFFSET
++static void rmnet_reset_mac_header(struct sk_buff *skb)
++{
++	skb->mac_header = 0;
++	skb->mac_len = 0;
++}
++#else
++static void rmnet_reset_mac_header(struct sk_buff *skb)
++{
++	skb->mac_header = skb->data;
++	skb->mac_len = 0;
++}
++#endif /*NET_SKBUFF_DATA_USES_OFFSET*/
++
+ /**
+  * __rmnet_deliver_skb() - Deliver skb
+  *
+@@ -177,6 +191,9 @@ static rx_handler_result_t rmnet_bridge_handler(struct sk_buff *skb,
+ static rx_handler_result_t __rmnet_deliver_skb(struct sk_buff *skb,
+ 					 struct rmnet_logical_ep_conf_s *ep)
+ {
++	struct napi_struct *napi = NULL;
++	gro_result_t gro_res;
++
+ 	trace___rmnet_deliver_skb(skb);
+ 	switch (ep->rmnet_mode) {
+ 	case RMNET_EPMODE_NONE:
+@@ -194,7 +211,19 @@ static rx_handler_result_t __rmnet_deliver_skb(struct sk_buff *skb,
+ 
+ 		case RX_HANDLER_PASS:
+ 			skb->pkt_type = PACKET_HOST;
+-			netif_receive_skb(skb);
++			rmnet_reset_mac_header(skb);
++			if (skb->dev->features & NETIF_F_GRO) {
++				napi = get_current_napi_context();
++				if (napi != NULL) {
++					gro_res = napi_gro_receive(napi, skb);
++					trace_rmnet_gro_downlink(gro_res);
++				} else {
++					WARN_ONCE(1, "current napi is NULL\n");
++					netif_receive_skb(skb);
++				}
++			} else {
++				netif_receive_skb(skb);
++			}
+ 			return RX_HANDLER_CONSUMED;
+ 		}
+ 		return RX_HANDLER_PASS;
+@@ -245,7 +274,7 @@ static rx_handler_result_t rmnet_ingress_deliver_packet(struct sk_buff *skb,
+  * @config:     Physical endpoint configuration for the ingress device
+  *
+  * Most MAP ingress functions are processed here. Packets are processed
+- * individually; aggregates packets should use rmnet_map_ingress_handler()
++ * individually; aggregated packets should use rmnet_map_ingress_handler()
+  *
+  * Return:
+  *      - RX_HANDLER_CONSUMED if packet is dropped

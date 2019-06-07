@@ -513,6 +513,27 @@ static void _rmnet_netlink_add_del_vnd_tc_flow
 	}
 }
 
+static void _rmnet_netlink_get_vnd_name
+					(struct rmnet_nl_msg_s *rmnet_header,
+					 struct rmnet_nl_msg_s *resp_rmnet)
+{
+	int r;
+	_RMNET_NETLINK_NULL_CHECKS();
+	resp_rmnet->crd = RMNET_NETLINK_MSG_RETURNCODE;
+
+	r = rmnet_vnd_get_name(rmnet_header->vnd.id, resp_rmnet->vnd.vnd_name,
+			       RMNET_MAX_STR_LEN);
+
+	if (r != 0) {
+		resp_rmnet->return_code = RMNET_CONFIG_INVALID_REQUEST;
+		return;
+	}
+
+	/* Begin Data */
+	resp_rmnet->crd = RMNET_NETLINK_MSG_RETURNDATA;
+	resp_rmnet->arg_length = RMNET_NL_MSG_SIZE(vnd);
+}
+
 /**
  * rmnet_config_netlink_msg_handler() - Netlink message handler callback
  * @skb:      Packet containing netlink messages
@@ -629,6 +650,13 @@ void rmnet_config_netlink_msg_handler(struct sk_buff *skb)
 						rmnet_header->vnd.vnd_name);
 		break;
 
+	case RMNET_NETLINK_NEW_VND_WITH_NAME:
+		resp_rmnet->crd = RMNET_NETLINK_MSG_RETURNCODE;
+		resp_rmnet->return_code = rmnet_create_vnd_name(
+						rmnet_header->vnd.id,
+						rmnet_header->vnd.vnd_name);
+		break;
+
 	case RMNET_NETLINK_FREE_VND:
 		resp_rmnet->crd = RMNET_NETLINK_MSG_RETURNCODE;
 		/* Please check rmnet_vnd_free_dev documentation regarding
@@ -648,6 +676,17 @@ void rmnet_config_netlink_msg_handler(struct sk_buff *skb)
 		_rmnet_netlink_add_del_vnd_tc_flow(rmnet_header->message_type,
 						   rmnet_header,
 						   resp_rmnet);
+		break;
+
+	case RMNET_NETLINK_NEW_VND_WITH_PREFIX:
+		resp_rmnet->crd = RMNET_NETLINK_MSG_RETURNCODE;
+		resp_rmnet->return_code = rmnet_create_vnd_prefix(
+						rmnet_header->vnd.id,
+						rmnet_header->vnd.vnd_name);
+		break;
+
+	case RMNET_NETLINK_GET_VND_NAME:
+		_rmnet_netlink_get_vnd_name(rmnet_header, resp_rmnet);
 		break;
 
 	default:
@@ -1071,11 +1110,11 @@ int rmnet_create_vnd(int id)
 	struct net_device *dev;
 	ASSERT_RTNL();
 	LOGL("(%d);", id);
-	return rmnet_vnd_create_dev(id, &dev, NULL);
+	return rmnet_vnd_create_dev(id, &dev, NULL, 0);
 }
 
 /**
- * rmnet_create_vnd() - Create virtual network device node
+ * rmnet_create_vnd_prefix() - Create virtual network device node
  * @id:       RmNet virtual device node id
  * @prefix:   String prefix for device name
  *
@@ -1087,7 +1126,24 @@ int rmnet_create_vnd_prefix(int id, const char *prefix)
 	struct net_device *dev;
 	ASSERT_RTNL();
 	LOGL("(%d, \"%s\");", id, prefix);
-	return rmnet_vnd_create_dev(id, &dev, prefix);
+	return rmnet_vnd_create_dev(id, &dev, prefix, 0);
+}
+
+/**
+ * rmnet_create_vnd_name() - Create virtual network device node
+ * @id:       RmNet virtual device node id
+ * @prefix:   String prefix for device name
+ *
+ * Return:
+ *      - result of rmnet_vnd_create_dev()
+ */
+int rmnet_create_vnd_name(int id, const char *name)
+{
+	struct net_device *dev;
+
+	ASSERT_RTNL();
+	LOGL("(%d, \"%s\");", id, name);
+	return rmnet_vnd_create_dev(id, &dev, name, 1);
 }
 
 /**
