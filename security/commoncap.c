@@ -907,17 +907,26 @@ static long cap_prctl_drop(struct cred *new, unsigned long cap)
 int cap_task_prctl(int option, unsigned long arg2, unsigned long arg3,
 		   unsigned long arg4, unsigned long arg5)
 {
-	const struct cred *old = current_cred();
 	struct cred *new;
+	long error = 0;
+
+	new = prepare_creds();
+	if (!new)
+		return -ENOMEM;
 
 	switch (option) {
 	case PR_CAPBSET_READ:
+		error = -EINVAL;
 		if (!cap_valid(arg2))
-			return -EINVAL;
-		return !!cap_raised(old->cap_bset, arg2);
+			goto error;
+		error = !!cap_raised(new->cap_bset, arg2);
+		goto no_change;
 
 	case PR_CAPBSET_DROP:
-		return cap_prctl_drop(arg2);
+		error = cap_prctl_drop(new, arg2);
+		if (error < 0)
+			goto error;
+		goto changed;
 
 	/*
 	 * The next four prctl's remain to assist with transitioning a
