@@ -965,29 +965,26 @@ int cap_task_prctl(int option, unsigned long arg2, unsigned long arg3,
 			 */
 		    )
 			/* cannot change a locked bit */
-			return -EPERM;
-
-		new = prepare_creds();
-		if (!new)
-			return -ENOMEM;
+			goto error;
 		new->securebits = arg2;
-		return commit_creds(new);
+		goto changed;
 
 	case PR_GET_SECUREBITS:
-		return old->securebits;
+		error = new->securebits;
+		goto no_change;
 
 	case PR_GET_KEEPCAPS:
-		return !!issecure(SECURE_KEEP_CAPS);
+		if (issecure(SECURE_KEEP_CAPS))
+			error = 1;
+		goto no_change;
 
 	case PR_SET_KEEPCAPS:
+		error = -EINVAL;
 		if (arg2 > 1) /* Note, we rely on arg2 being unsigned here */
-			return -EINVAL;
+			goto error;
+		error = -EPERM;
 		if (issecure(SECURE_KEEP_CAPS_LOCKED))
-			return -EPERM;
-
-		new = prepare_creds();
-		if (!new)
-			return -ENOMEM;
+			goto error;
 		if (arg2)
 			new->securebits |= issecure_mask(SECURE_KEEP_CAPS);
 		else
@@ -1033,8 +1030,18 @@ int cap_task_prctl(int option, unsigned long arg2, unsigned long arg3,
 
 	default:
 		/* No functionality available - continue with default */
-		return -ENOSYS;
+		error = -ENOSYS;
+		goto error;
 	}
+
+	/* Functionality provided */
+changed:
+	return commit_creds(new);
+
+no_change:
+error:
+	abort_creds(new);
+	return error;
 }
 
 /**
