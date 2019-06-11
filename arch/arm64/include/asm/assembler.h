@@ -155,3 +155,14 @@ lr	.req	x30		// link register
 #endif
 	orr	\rd, \lbits, \hbits, lsl #32
 	.endm
+/*
+ * Annotate a function as being unsuitable for kprobes.
+ */
+#ifdef CONFIG_KPROBES
+#define NOKPROBE(x)				\
+	.pushsection "_kprobe_blacklist", "aw";	\
+	.quad	x;				\
+	.popsection;
+#else
+#define NOKPROBE(x)
+#endif

@@ -29,6 +29,32 @@
 #include <asm/unistd.h>
 
 /*
+ * Context tracking subsystem.  Used to instrument transitions
+ * between user and kernel mode.
+ */
+	.macro ct_user_exit, syscall = 0
+#ifdef CONFIG_CONTEXT_TRACKING
+	bl	context_tracking_user_exit
+	.if \syscall == 1
+	/*
+	 * Save/restore needed during syscalls.  Restore syscall arguments from
+	 * the values already saved on stack during kernel_entry.
+	 */
+	ldp	x0, x1, [sp]
+	ldp	x2, x3, [sp, #S_X2]
+	ldp	x4, x5, [sp, #S_X4]
+	ldp	x6, x7, [sp, #S_X6]
+	.endif
+#endif
+	.endm
+
+	.macro ct_user_enter
+#ifdef CONFIG_CONTEXT_TRACKING
+	bl	context_tracking_user_enter
+#endif
+	.endm
+
+/*
  * Bad Abort numbers
  *-----------------
  */
@@ -445,7 +471,8 @@ el0_da:
 	enable_dbg_and_irq
 	mov	x1, x25
 	mov	x2, sp
-	b	do_mem_abort
+	bl	do_mem_abort
+	b	ret_to_user
 el0_ia:
 	/*
 	 * Instruction abort handling
@@ -455,25 +482,42 @@ el0_ia:
 #ifdef CONFIG_TRACE_IRQFLAGS
 	bl	trace_hardirqs_off
 #endif
-	orr	x1, x25, #1 << 24		// use reserved ISS bit for instruction aborts
+	ct_user_exit
+	mov	x0, x26
+	mov	x1, x25
 	mov	x2, sp
-	b	do_el0_ia_bp_hardening
+	bl	do_el0_ia_bp_hardening
+	b	ret_to_user
 el0_fpsimd_acc:
 	/*
 	 * Floating Point or Advanced SIMD access
 	 */
 	enable_dbg
+	ct_user_exit
 	mov	x0, x25
 	mov	x1, sp
-	b	do_fpsimd_acc
+	bl	do_fpsimd_acc
+	b	ret_to_user
+el0_sve_acc:
+	/*
+	 * Scalable Vector Extension access
+	 */
+	enable_dbg
+	ct_user_exit
+	mov	x0, x25
+	mov	x1, sp
+	bl	do_sve_acc
+	b	ret_to_user
 el0_fpsimd_exc:
 	/*
 	 * Floating Point or Advanced SIMD exception
 	 */
 	enable_dbg
+	ct_user_exit
 	mov	x0, x25
 	mov	x1, sp
-	b	do_fpsimd_exc
+	bl	do_fpsimd_exc
+	b	ret_to_user
 el0_sp_pc:
 	/*
 	 * Stack or PC alignment exception handling
@@ -481,26 +525,32 @@ el0_sp_pc:
 	mrs	x0, far_el1
 	// enable interrupts before calling the main handler
 	enable_dbg_and_irq
+	ct_user_exit
+	mov	x0, x26
 	mov	x1, x25
 	mov	x2, sp
-	b	do_sp_pc_abort
+	bl	do_sp_pc_abort
+	b	ret_to_user
 el0_undef:
 	/*
 	 * Undefined instruction
 	 */
 	// enable interrupts before calling the main handler
 	enable_dbg_and_irq
+	ct_user_exit
 	mov	x0, sp
-	b	do_undefinstr
+	bl	do_undefinstr
+	b	ret_to_user
 el0_sys:
 	/*
 	 * System instructions, for trapped cache maintenance instructions
 	 */
 	enable_dbg
-	enable_irq
+	ct_user_exit
 	mov	x0, x25
 	mov	x1, sp
-	b	do_sysinstr
+	bl	do_sysinstr
+	b	ret_to_user
 el0_dbg:
 	/*
 	 * Debug exception handling
@@ -511,13 +561,16 @@ el0_dbg:
 	mov	x2, sp
 	bl	do_debug_exception
 	enable_dbg
+	ct_user_exit
 	b	ret_to_user
 el0_inv:
 	enable_dbg
+	ct_user_exit
 	mov	x0, sp
 	mov	x1, #BAD_SYNC
-	mrs	x2, esr_el1
-	b	bad_mode
+	mov	x2, x25
+	bl	bad_el0_sync
+	b	ret_to_user
 ENDPROC(el0_sync)
 
 	.align	6
@@ -529,6 +582,12 @@ el0_irq_naked:
 	bl	trace_hardirqs_off
 #endif
 
+	ct_user_exit
+#ifdef CONFIG_HARDEN_BRANCH_PREDICTOR
+	tbz	x22, #55, 1f
+	bl	do_el0_irq_bp_hardening
+1:
+#endif
 	irq_handler
 
 #ifdef CONFIG_TRACE_IRQFLAGS
@@ -537,35 +596,27 @@ el0_irq_naked:
 	b	ret_to_user
 ENDPROC(el0_irq)
 
-/*
- * Register switch for AArch64. The callee-saved registers need to be saved
- * and restored. On entry:
- *   x0 = previous task_struct (must be preserved across the switch)
- *   x1 = next task_struct
- * Previous and next are guaranteed not to be the same.
- *
- */
-ENTRY(cpu_switch_to)
-	add	x8, x0, #THREAD_CPU_CONTEXT
-	mov	x9, sp
-	stp	x19, x20, [x8], #16		// store callee-saved registers
-	stp	x21, x22, [x8], #16
-	stp	x23, x24, [x8], #16
-	stp	x25, x26, [x8], #16
-	stp	x27, x28, [x8], #16
-	stp	x29, x9, [x8], #16
-	str	lr, [x8]
-	add	x8, x1, #THREAD_CPU_CONTEXT
-	ldp	x19, x20, [x8], #16		// restore callee-saved registers
-	ldp	x21, x22, [x8], #16
-	ldp	x23, x24, [x8], #16
-	ldp	x25, x26, [x8], #16
-	ldp	x27, x28, [x8], #16
-	ldp	x29, x9, [x8], #16
-	ldr	lr, [x8]
-	mov	sp, x9
-	ret
-ENDPROC(cpu_switch_to)
+el1_error:
+	kernel_entry 1
+	mrs	x1, esr_el1
+	enable_dbg
+	mov	x0, sp
+	bl	do_serror
+	kernel_exit 1
+ENDPROC(el1_error)
+
+el0_error:
+	kernel_entry 0
+el0_error_naked:
+	mrs	x1, esr_el1
+	enable_dbg
+	mov	x0, sp
+	bl	do_serror
+	enable_dbg
+	ct_user_exit
+	b	ret_to_user
+ENDPROC(el0_error)
+
 
 /*
  * This is the fast syscall return path.  We do as little as possible here,
@@ -605,22 +656,11 @@ ret_to_user:
 	ldr	x1, [tsk, #TI_FLAGS]
 	and	x2, x1, #_TIF_WORK_MASK
 	cbnz	x2, work_pending
+finish_ret_to_user:
 	enable_step_tsk x1, x2
 no_work_pending:
 	kernel_exit 0, ret = 0
 ENDPROC(ret_to_user)
-
-/*
- * This is how we return from a fork.
- */
-ENTRY(ret_from_fork)
-	bl	schedule_tail
-	cbz	x19, 1f				// not a kernel thread
-	mov	x0, x20
-	blr	x19
-1:	get_thread_info tsk
-	b	ret_to_user
-ENDPROC(ret_from_fork)
 
 /*
  * SVC handler.
@@ -687,6 +727,52 @@ ENTRY(sys_rt_sigreturn_wrapper)
 	mov	x0, sp
 	b	sys_rt_sigreturn
 ENDPROC(sys_rt_sigreturn_wrapper)
+
+/*
+ * Register switch for AArch64. The callee-saved registers need to be saved
+ * and restored. On entry:
+ *   x0 = previous task_struct (must be preserved across the switch)
+ *   x1 = next task_struct
+ * Previous and next are guaranteed not to be the same.
+ *
+ */
+ENTRY(cpu_switch_to)
+	mov	x10, #THREAD_CPU_CONTEXT
+	add	x8, x0, x10
+	mov	x9, sp
+	stp	x19, x20, [x8], #16		// store callee-saved registers
+	stp	x21, x22, [x8], #16
+	stp	x23, x24, [x8], #16
+	stp	x25, x26, [x8], #16
+	stp	x27, x28, [x8], #16
+	stp	x29, x9, [x8], #16
+	str	lr, [x8]
+	add	x8, x1, x10
+	ldp	x19, x20, [x8], #16		// restore callee-saved registers
+	ldp	x21, x22, [x8], #16
+	ldp	x23, x24, [x8], #16
+	ldp	x25, x26, [x8], #16
+	ldp	x27, x28, [x8], #16
+	ldp	x29, x9, [x8], #16
+	ldr	lr, [x8]
+	mov	sp, x9
+	msr	sp_el0, x1
+	ret
+ENDPROC(cpu_switch_to)
+NOKPROBE(cpu_switch_to)
+
+/*
+ * This is how we return from a fork.
+ */
+ENTRY(ret_from_fork)
+	bl	schedule_tail
+	cbz	x19, 1f				// not a kernel thread
+	mov	x0, x20
+	blr	x19
+1:	get_thread_info tsk
+	b	ret_to_user
+ENDPROC(ret_from_fork)
+NOKPROBE(ret_from_fork)
 
 #ifdef CONFIG_STRICT_MEMORY_RWX
 .data

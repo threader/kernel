@@ -124,6 +124,19 @@ void __init early_print(const char *str, ...)
 	printk("%s", buf);
 }
 
+struct cpuinfo_arm64 {
+	struct cpu	cpu;
+	u32		reg_midr;
+};
+
+static DEFINE_PER_CPU(struct cpuinfo_arm64, cpu_data);
+
+void cpuinfo_store_cpu(void)
+{
+	struct cpuinfo_arm64 *info = this_cpu_ptr(&cpu_data);
+	info->reg_midr = read_cpuid_id();
+}
+
 void __init smp_setup_processor_id(void)
 {
 	/*
@@ -207,6 +220,22 @@ static void __init smp_build_mpidr_hash(void)
 	__flush_dcache_area(&mpidr_hash, sizeof(struct mpidr_hash));
 }
 #endif
+
+#ifdef CONFIG_HARDEN_BRANCH_PREDICTOR
+#include <asm/mmu_context.h>
+
+DEFINE_PER_CPU_READ_MOSTLY(struct bp_hardening_data, bp_hardening_data);
+
+static void __maybe_unused __install_bp_hardening_cb(bp_hardening_cb_t fn)
+{
+	__this_cpu_write(bp_hardening_data.fn, fn);
+}
+
+static void __maybe_unused install_bp_hardening_cb(bp_hardening_cb_t fn)
+{
+	__install_bp_hardening_cb(fn);
+}
+#endif	/* CONFIG_HARDEN_BRANCH_PREDICTOR */
 
 static void __init setup_processor(void)
 {
@@ -308,6 +337,8 @@ static void __init setup_processor(void)
 
 static void __init setup_machine_fdt(phys_addr_t dt_phys)
 {
+	cpuinfo_store_cpu();
+
 	if (!dt_phys || !early_init_dt_scan(phys_to_virt(dt_phys))) {
 		early_print("\n"
 			"Error: invalid device tree blob at physical address 0x%p (virtual address 0x%p)\n"
@@ -462,21 +493,19 @@ static int __init arm64_device_init(void)
 }
 arch_initcall(arm64_device_init);
 
-static DEFINE_PER_CPU(struct cpu, cpu_data);
-
 static int __init topology_init(void)
 {
 	int i;
 
 	for_each_possible_cpu(i) {
-		struct cpu *cpu = &per_cpu(cpu_data, i);
+		struct cpu *cpu = &per_cpu(cpu_data.cpu, i);
 		cpu->hotpluggable = 1;
 		register_cpu(cpu, i);
 	}
 
 	return 0;
 }
-postcore_initcall(topology_init);
+subsys_initcall(topology_init);
 
 static const char *hwcap_str[] = {
 	"fp",
@@ -490,6 +519,42 @@ static const char *hwcap_str[] = {
 	NULL
 };
 
+#ifdef CONFIG_COMPAT
+static const char *compat_hwcap_str[] = {
+	"swp",
+	"half",
+	"thumb",
+	"26bit",
+	"fastmult",
+	"fpa",
+	"vfp",
+	"edsp",
+	"java",
+	"iwmmxt",
+	"crunch",
+	"thumbee",
+	"neon",
+	"vfpv3",
+	"vfpv3d16",
+	"tls",
+	"vfpv4",
+	"idiva",
+	"idivt",
+	"vfpd32",
+	"lpae",
+	"evtstrm",
+	NULL
+};
+
+static const char *compat_hwcap2_str[] = {
+	"aes",
+	"pmull",
+	"sha1",
+	"sha2",
+	"crc32",
+	NULL
+};
+#endif /* CONFIG_COMPAT */
 static int c_show(struct seq_file *m, void *v)
 {
 	int i;
