@@ -262,7 +262,7 @@ static void __fput(struct file *file)
 	mntput(mnt);
 }
 
-static LLIST_HEAD(delayed_fput_list);
+static LIST_HEAD(delayed_fput_list);
 static void delayed_fput(struct work_struct *unused)
 {
 	struct llist_node *node = llist_del_all(&delayed_fput_list);

@@ -299,6 +299,8 @@ struct phy_device {
 
 	struct phy_c45_device_ids c45_ids;
 	bool is_c45;
+	RH_KABI_FILL_HOLE(bool is_internal)
+	/* there is 2-bytes hole on all platforms */
 
 	enum phy_state state;
 

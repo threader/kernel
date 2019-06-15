@@ -57,6 +57,26 @@ jump_label_sort_entries(struct jump_entry *start, struct jump_entry *stop)
 
 static void jump_label_update(struct static_key *key);
 
+/*
+ * There are similar definitions for the !HAVE_JUMP_LABEL case in jump_label.h.
+ * The use of 'atomic_read()' requires atomic.h and its problematic for some
+ * kernel headers such as kernel.h and others. Since static_key_count() is not
+ * used in the branch statements as it is for the !HAVE_JUMP_LABEL case its ok
+ * to have it be a function here. Similarly, for 'static_key_enable()' and
+ * 'static_key_disable()', which require bug.h. This should allow jump_label.h
+ * to be included from most/all places for HAVE_JUMP_LABEL.
+ */
+int static_key_count(struct static_key *key)
+{
+	/*
+	 * -1 means the first static_key_slow_inc() is in progress.
+	 *  static_key_enabled() must return true, so return 1 here.
+	 */
+	int n = atomic_read(&key->enabled);
+
+	return n >= 0 ? n : 1;
+}
+EXPORT_SYMBOL_GPL(static_key_count);
 void static_key_slow_inc(struct static_key *key)
 {
 	if (atomic_read(&key->enabled) > 0) {
@@ -149,7 +169,7 @@ static int __jump_label_text_reserved(struct jump_entry *iter_start,
 	return 0;
 }
 
-/* 
+/*
  * Update code which is definitely not currently executing.
  * Architectures which need heavyweight synchronization to modify
  * running code can override this to make the non-live update case
@@ -158,17 +178,20 @@ static int __jump_label_text_reserved(struct jump_entry *iter_start,
 void __weak __init_or_module arch_jump_label_transform_static(struct jump_entry *entry,
 					    enum jump_label_type type)
 {
-	arch_jump_label_transform(entry, type);	
+	arch_jump_label_transform(entry, type);
 }
+
 static inline struct jump_entry *static_key_entries(struct static_key *key)
 {
 	WARN_ON_ONCE(key->type & JUMP_TYPE_LINKED);
 	return (struct jump_entry *)(key->type & ~JUMP_TYPE_MASK);
 }
+
 static inline struct static_key *jump_entry_key(struct jump_entry *entry)
 {
 	return (struct static_key *)((unsigned long)entry->key & ~1UL);
 }
+
 static bool jump_entry_branch(struct jump_entry *entry)
 {
 	return (unsigned long)entry->key & 1UL;
