@@ -18,6 +18,8 @@
 #ifndef __ASM_UACCESS_H
 #define __ASM_UACCESS_H
 
+#ifndef __ASSEMBLY__
+
 /*
  * User space memory access functions
  */
@@ -278,5 +280,7 @@ extern long strncpy_from_user(char *dest, const char __user *src, long count);
 
 extern __must_check long strlen_user(const char __user *str);
 extern __must_check long strnlen_user(const char __user *str, long n);
+
+#endif	/* __ASSEMBLY__ */
 
 #endif /* __ASM_UACCESS_H */

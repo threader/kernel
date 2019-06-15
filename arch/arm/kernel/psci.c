@@ -115,14 +115,15 @@ static int psci_get_version(void)
 	return err;
 }
 
-static int psci_cpu_suspend(unsigned long  state_id,
+static int psci_cpu_suspend(struct psci_power_state state,
 			    unsigned long entry_point)
 {
 	int err;
-	u32 fn;
+	u32 fn, power_state;
 
 	fn = psci_function_id[PSCI_FN_CPU_SUSPEND];
-	err = invoke_psci_fn(fn, state_id, entry_point, 0);
+	power_state = psci_power_state_pack(state);
+	err = invoke_psci_fn(fn, power_state, entry_point, 0);
 	return psci_to_linux_errno(err);
 }
 
@@ -221,7 +222,7 @@ static int psci_suspend_finisher(unsigned long state_id)
  * driver aggregates the cluster low power mode will provide in the
  * composite stateID to be passed down to the PSCI layer.
  */
-int cpu_psci_cpu_suspend(unsigned long state_id)
+int cpu_psci_cpu_suspend(state)
 {
 	if (WARN_ON_ONCE(!state_id))
 		return -EINVAL;

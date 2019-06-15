@@ -16,7 +16,7 @@ arm64-obj-y		:= cputable.o debug-monitors.o entry.o irq.o fpsimd.o	\
 			   entry-fpsimd.o process.o ptrace.o setup.o signal.o	\
 			   sys.o stacktrace.o time.o traps.o io.o vdso.o	\
 			   hyp-stub.o psci.o cpu_ops.o insn.o opcodes.o		\
-			   return_address.o
+			   return_address.o cpu_errata.o cpufeature.o	
 
 arm64-obj-$(CONFIG_COMPAT)		+= sys32.o kuser32.o signal32.o		\
 					   sys_compat.o
@@ -33,8 +33,12 @@ arm64-obj-$(CONFIG_ARM64_CPU_SUSPEND)	+= sleep.o suspend.o
 arm64-obj-$(CONFIG_JUMP_LABEL)		+= jump_label.o
 arm64-obj-$(CONFIG_KGDB)		+= kgdb.o
 arm64-obj-$(CONFIG_EFI)			+= efi.o efi-stub.o efi-entry.o
-
+arm64-obj-$(CONFIG_ARM64_SSBD)		+= ssbd.o
 obj-$(CONFIG_SWP_EMULATE)	+= swp_emulate.o
+
+ifeq ($(CONFIG_KVM),y)
+arm64-obj-$(CONFIG_HARDEN_BRANCH_PREDICTOR)	+= bpi.o
+endif
 
 obj-$(CONFIG_PCI)                      += pcibios.o
 obj-y					+= $(arm64-obj-y) vdso/

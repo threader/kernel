@@ -23,6 +23,7 @@
 
 #include <asm/assembler.h>
 #include <asm/asm-offsets.h>
+#include <asm/cpufeature.h>
 #include <asm/errno.h>
 #include <asm/esr.h>
 #include <asm/thread_info.h>
@@ -222,6 +223,9 @@ alternative_cb_end
 	msr contextidr_el1, xzr
 #endif
 #endif
+3:
+	apply_ssbd 0, 5f, x0, x1
+5:
 	.endif
 1:	.if	\ret
 	ldr	x1, [sp, #S_X1]			// preserve x0 (syscall return)
@@ -592,16 +596,6 @@ el0_fpsimd_acc:
 	mov	x0, x25
 	mov	x1, sp
 	bl	do_fpsimd_acc
-	b	ret_to_user
-el0_sve_acc:
-	/*
-	 * Scalable Vector Extension access
-	 */
-	enable_dbg
-	ct_user_exit
-	mov	x0, x25
-	mov	x1, sp
-	bl	do_sve_acc
 	b	ret_to_user
 el0_fpsimd_exc:
 	/*

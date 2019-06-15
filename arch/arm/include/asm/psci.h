@@ -24,7 +24,7 @@ struct psci_power_state {
 };
 
 struct psci_operations {
-	int (*cpu_suspend)(unsigned long state,
+	int (*cpu_suspend)(struct psci_power_state state,
 			   unsigned long entry_point);
 	int (*cpu_off)(struct psci_power_state state);
 	int (*cpu_on)(unsigned long cpuid, unsigned long entry_point);

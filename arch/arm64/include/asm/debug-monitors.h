@@ -73,11 +73,6 @@
 
 #define CACHE_FLUSH_IS_SAFE		1
 
-enum debug_el {
-	DBG_ACTIVE_EL0 = 0,
-	DBG_ACTIVE_EL1,
-};
-
 /* AArch32 */
 #define DBG_ESR_EVT_BKPT	0x4
 #define DBG_ESR_EVT_VECC	0x5
@@ -114,6 +109,11 @@ void register_break_hook(struct break_hook *hook);
 void unregister_break_hook(struct break_hook *hook);
 
 u8 debug_monitors_arch(void);
+
+enum debug_el {
+	DBG_ACTIVE_EL0 = 0,
+	DBG_ACTIVE_EL1,
+};
 
 void enable_debug_monitors(enum debug_el el);
 void disable_debug_monitors(enum debug_el el);

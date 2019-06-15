@@ -27,7 +27,6 @@
 #include <linux/uaccess.h>
 
 #include <asm/debug-monitors.h>
-#include <asm/cputype.h>
 #include <asm/system_misc.h>
 
 /* Low-level stepping controls. */
@@ -42,7 +41,7 @@
 /* Determine debug architecture. */
 u8 debug_monitors_arch(void)
 {
-	return read_cpuid(ID_AA64DFR0_EL1) & 0xf;
+	return read_cpuid(SYS_ID_AA64DFR0_EL1) & 0xf;
 }
 
 /*

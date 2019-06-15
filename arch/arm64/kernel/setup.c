@@ -43,12 +43,14 @@
 #include <linux/of_address.h>
 #include <linux/of_fdt.h>
 #include <linux/of_platform.h>
+#include <linux/personality.h>
 #include <linux/dma-mapping.h>
 #include <linux/efi.h>
 
 #include <asm/fixmap.h>
 #include <asm/cputype.h>
 #include <asm/elf.h>
+#include <asm/cpufeature.h>
 #include <asm/cputable.h>
 #include <asm/cpu_ops.h>
 #include <asm/sections.h>
@@ -64,7 +66,6 @@
 unsigned int processor_id;
 EXPORT_SYMBOL(processor_id);
 
-unsigned long elf_hwcap __read_mostly;
 EXPORT_SYMBOL_GPL(elf_hwcap);
 
 unsigned int boot_reason;
@@ -76,19 +77,11 @@ EXPORT_SYMBOL(cold_boot);
 char* (*arch_read_hardware_id)(void);
 EXPORT_SYMBOL(arch_read_hardware_id);
 
-#ifdef CONFIG_COMPAT
-#define COMPAT_ELF_HWCAP_DEFAULT	\
-				(COMPAT_HWCAP_HALF|COMPAT_HWCAP_THUMB|\
-				 COMPAT_HWCAP_FAST_MULT|COMPAT_HWCAP_EDSP|\
-				 COMPAT_HWCAP_TLS|COMPAT_HWCAP_VFP|\
-				 COMPAT_HWCAP_VFPv3|COMPAT_HWCAP_VFPv4|\
-				 COMPAT_HWCAP_NEON|COMPAT_HWCAP_IDIV)
-unsigned int compat_elf_hwcap __read_mostly = COMPAT_ELF_HWCAP_DEFAULT;
-unsigned int compat_elf_hwcap2 __read_mostly;
-#endif
-
 static const char *cpu_name;
 static const char *machine_name;
+#ifdef CONFIG_HARDEN_BRANCH_PREDICTOR
+bool sys_psci_bp_hardening_initialised;
+#endif
 phys_addr_t __fdt_pointer __initdata;
 
 /*
@@ -224,7 +217,7 @@ static void __init smp_build_mpidr_hash(void)
 #ifdef CONFIG_HARDEN_BRANCH_PREDICTOR
 #include <asm/mmu_context.h>
 
-DEFINE_PER_CPU_READ_MOSTLY(struct bp_hardening_data, bp_hardening_data);
+//DEFINE_PER_CPU_READ_MOSTLY(struct bp_hardening_data, bp_hardening_data);
 
 static void __maybe_unused __install_bp_hardening_cb(bp_hardening_cb_t fn)
 {
@@ -234,6 +227,20 @@ static void __maybe_unused __install_bp_hardening_cb(bp_hardening_cb_t fn)
 static void __maybe_unused install_bp_hardening_cb(bp_hardening_cb_t fn)
 {
 	__install_bp_hardening_cb(fn);
+}
+
+void enable_psci_bp_hardening(void *data)
+{
+	switch(read_cpuid_part_number()) {
+	case ARM_CPU_PART_CORTEX_A57:
+	case ARM_CPU_PART_CORTEX_A72:
+		if (psci_ops.get_version)
+			install_bp_hardening_cb(
+				(bp_hardening_cb_t)psci_ops.get_version);
+		else
+			install_bp_hardening_cb(
+				(bp_hardening_cb_t)psci_apply_bp_hardening);
+	}
 }
 #endif	/* CONFIG_HARDEN_BRANCH_PREDICTOR */
 
@@ -259,6 +266,11 @@ static void __init setup_processor(void)
 	sprintf(init_utsname()->machine, ELF_PLATFORM);
 	elf_hwcap = 0;
 
+#ifdef CONFIG_HARDEN_BRANCH_PREDICTOR
+	on_each_cpu(enable_psci_bp_hardening, NULL, true);
+	sys_psci_bp_hardening_initialised = true;
+#endif
+
 	/*
 	 * Check for sane CTR_EL0.CWG value.
 	 */
@@ -276,7 +288,7 @@ static void __init setup_processor(void)
 	 * The blocks we test below represent incremental functionality
 	 * for non-negative values. Negative values are reserved.
 	 */
-	features = read_cpuid(ID_AA64ISAR0_EL1);
+	features = read_cpuid(SYS_ID_AA64ISAR0_EL1);
 	block = (features >> 4) & 0xf;
 	if (!(block & 0x8)) {
 		switch (block) {
@@ -307,7 +319,7 @@ static void __init setup_processor(void)
 	 * ID_ISAR5_EL1 carries similar information as above, but pertaining to
 	 * the Aarch32 32-bit execution state.
 	 */
-	features = read_cpuid(ID_ISAR5_EL1);
+	features = read_cpuid(SYS_ID_ISAR5_EL1);
 	block = (features >> 4) & 0xf;
 	if (!(block & 0x8)) {
 		switch (block) {
@@ -334,7 +346,26 @@ static void __init setup_processor(void)
 		compat_elf_hwcap2 |= COMPAT_HWCAP2_CRC32;
 #endif
 }
+/*
+static void __init setup_processor(void)
+{
+	struct cpu_info *cpu_info;
 
+	cpu_info = lookup_processor_type(read_cpuid_id());
+	if (!cpu_info) {
+		printk("CPU configuration botched (ID %08x), unable to continue.\n",
+		       read_cpuid_id());
+		while (1);
+	}
+
+	cpu_name = cpu_info->cpu_name;
+
+	printk("CPU: %s [%08x] revision %d\n",
+	       cpu_name, read_cpuid_id(), read_cpuid_id() & 15);
+
+	sprintf(init_utsname()->machine, ELF_PLATFORM);
+}
+*/
 static void __init setup_machine_fdt(phys_addr_t dt_phys)
 {
 	cpuinfo_store_cpu();
@@ -557,12 +588,12 @@ static const char *compat_hwcap2_str[] = {
 #endif /* CONFIG_COMPAT */
 static int c_show(struct seq_file *m, void *v)
 {
-	int i;
-
-	seq_printf(m, "Processor\t: %s rev %d (%s)\n",
-		   cpu_name, read_cpuid_id() & 15, ELF_PLATFORM);
+	int i, j;
 
 	for_each_present_cpu(i) {
+		struct cpuinfo_arm64 *cpuinfo = &per_cpu(cpu_data, i);
+		u32 midr = cpuinfo->reg_midr;
+
 		/*
 		 * glibc reads /proc/cpuinfo to determine the number of
 		 * online processors, looking for lines beginning with
@@ -571,29 +602,38 @@ static int c_show(struct seq_file *m, void *v)
 #ifdef CONFIG_SMP
 		seq_printf(m, "processor\t: %d\n", i);
 #endif
+
+		/*
+		 * Dump out the common processor features in a single line.
+		 * Userspace should read the hwcaps with getauxval(AT_HWCAP)
+		 * rather than attempting to parse this, but there's a body of
+		 * software which does already (at least for 32-bit).
+		 */
+		seq_puts(m, "Features\t:");
+
+		if (personality(current->personality) == PER_LINUX32) {
+#ifdef CONFIG_COMPAT // CONFIG_ARMV7_COMPAT_CPUINFO
+			for (j = 0; compat_hwcap_str[j]; j++)
+				if (COMPAT_ELF_HWCAP & (1 << j))
+					seq_printf(m, " %s", compat_hwcap_str[j]);
+
+			for (j = 0; compat_hwcap2_str[j]; j++)
+				if (compat_elf_hwcap2 & (1 << j))
+					seq_printf(m, " %s", compat_hwcap2_str[j]);
+#endif /* CONFIG_COMPAT */
+		} else {
+			for (j = 0; hwcap_str[j]; j++)
+				if (elf_hwcap & (1 << j))
+					seq_printf(m, " %s", hwcap_str[j]);
+			}
+		seq_puts(m, "\n");
+
+		seq_printf(m, "CPU implementer\t: 0x%02x\n", (midr >> 24));
+		seq_printf(m, "CPU architecture: 8\n");
+		seq_printf(m, "CPU variant\t: 0x%x\n", ((midr >> 20) & 0xf));
+		seq_printf(m, "CPU part\t: 0x%03x\n", ((midr >> 4) & 0xfff));
+		seq_printf(m, "CPU revision\t: %d\n\n", (midr & 0xf));
 	}
-
-	/* dump out the processor features */
-	seq_puts(m, "Features\t: ");
-
-	for (i = 0; hwcap_str[i]; i++)
-		if (elf_hwcap & (1 << i))
-			seq_printf(m, "%s ", hwcap_str[i]);
-#ifdef CONFIG_ARMV7_COMPAT_CPUINFO
-	if (is_compat_task()) {
-		/* Print out the non-optional ARMv8 HW capabilities */
-		seq_printf(m, "wp half thumb fastmult vfp edsp neon vfpv3 tlsi ");
-		seq_printf(m, "vfpv4 idiva idivt ");
-	}
-#endif
-
-	seq_printf(m, "\nCPU implementer\t: 0x%02x\n", read_cpuid_id() >> 24);
-	seq_printf(m, "CPU architecture: 8\n");
-	seq_printf(m, "CPU variant\t: 0x%x\n", (read_cpuid_id() >> 20) & 15);
-	seq_printf(m, "CPU part\t: 0x%03x\n", (read_cpuid_id() >> 4) & 0xfff);
-	seq_printf(m, "CPU revision\t: %d\n", read_cpuid_id() & 15);
-
-	seq_puts(m, "\n");
 
 	if (!arch_read_hardware_id)
 		seq_printf(m, "Hardware\t: %s\n", machine_name);

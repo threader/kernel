@@ -19,6 +19,7 @@
 #ifndef __ASM_PROCESSOR_H
 #define __ASM_PROCESSOR_H
 
+#ifndef __ASSEMBLY__
 /*
  * Default implementation of macro that returns current
  * instruction pointer ("program counter").
@@ -180,4 +181,5 @@ static inline void spin_lock_prefetch(const void *x)
 
 #endif
 
+#endif /* __ASSEMBLY__ */
 #endif /* __ASM_PROCESSOR_H */

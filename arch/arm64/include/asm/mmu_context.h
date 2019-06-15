@@ -23,6 +23,7 @@
 #include <linux/sched.h>
 
 #include <asm/cacheflush.h>
+#include <asm/cpufeature.h>
 #include <asm/proc-fns.h>
 #include <asm-generic/mm_hooks.h>
 #include <asm/cputype.h>
@@ -38,15 +39,19 @@ void __new_context(struct mm_struct *mm);
 #ifdef CONFIG_PID_IN_CONTEXTIDR
 static inline void contextidr_thread_switch(struct task_struct *next)
 {
+	pid_t pid = task_pid_nr(next);
 	asm(
 	"	msr	contextidr_el1, %0\n"
 	"	isb"
 	:
-	: "r" (task_pid_nr(next)));
+	: "r" (pid));
+	uncached_logk(LOGK_CTXID, (void *)(u64)pid);
+
 }
 #else
 static inline void contextidr_thread_switch(struct task_struct *next)
 {
+	uncached_logk(LOGK_CTXID, (void *)(u64)task_pid_nr(next));
 }
 #endif
 

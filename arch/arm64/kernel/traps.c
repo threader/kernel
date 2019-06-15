@@ -35,6 +35,8 @@
 #include <asm/arch_timer.h>
 #include <asm/atomic.h>
 #include <asm/barrier.h>
+
+#include <asm/cpufeature.h>
 #include <asm/debug-monitors.h>
 #include <asm/esr.h>
 #include <asm/traps.h>
@@ -335,6 +337,41 @@ static int call_undef_hook(struct pt_regs *regs, unsigned int instr)
 	return fn ? fn(regs, instr) : 1;
 }
 
+
+void force_signal_inject(int signal, int code, unsigned long address)
+{
+	siginfo_t info;
+	const char *desc;
+	struct pt_regs *regs = current_pt_regs();
+
+	clear_siginfo(&info);
+
+	switch (signal) {
+	case SIGILL:
+		desc = "undefined instruction";
+		break;
+	case SIGSEGV:
+		desc = "illegal memory access";
+		break;
+	default:
+		desc = "unknown or unrecoverable error";
+		break;
+	}
+
+	/* Force signals we don't understand to SIGKILL */
+	if (WARN_ON(signal != SIGKILL &&
+		    siginfo_layout(signal, code) != SIL_FAULT)) {
+		signal = SIGKILL;
+	}
+
+	info.si_signo = signal;
+	info.si_errno = 0;
+	info.si_code  = code;
+	info.si_addr  = (void __user *)address;
+
+	arm64_notify_die(desc, regs, &info, 0);
+}
+
 asmlinkage void __exception do_undefinstr(struct pt_regs *regs)
 {
 	u32 instr;
@@ -466,7 +503,43 @@ asmlinkage void bad_mode(struct pt_regs *regs, int reason, unsigned int esr)
 
 	arm64_notify_die("Oops - bad mode", regs, &info, 0);
 }
+bool arm64_is_fatal_ras_serror(struct pt_regs *regs, unsigned int esr)
+{
+	u32 aet = arm64_ras_serror_get_severity(esr);
 
+	switch (aet) {
+	case ESR_ELx_AET_CE:	/* corrected error */
+	case ESR_ELx_AET_UEO:	/* restartable, not yet consumed */
+		/*
+		 * The CPU can make progress. We may take UEO again as
+		 * a more severe error.
+		 */
+		return false;
+
+	case ESR_ELx_AET_UEU:	/* Uncorrected Unrecoverable */
+	case ESR_ELx_AET_UER:	/* Uncorrected Recoverable */
+		/*
+		 * The CPU can't make progress. The exception may have
+		 * been imprecise.
+		 */
+		return true;
+
+	case ESR_ELx_AET_UC:	/* Uncontainable or Uncategorized error */
+	default:
+		/* Error has been silently propagated */
+		arm64_serror_panic(regs, esr);
+	}
+}
+asmlinkage void do_serror(struct pt_regs *regs, unsigned int esr)
+{
+	nmi_enter();
+
+	/* non-RAS errors are not containable */
+	if (!arm64_is_ras_serror(esr) || arm64_is_fatal_ras_serror(regs, esr))
+		arm64_serror_panic(regs, esr);
+
+	nmi_exit();
+}
 void __pte_error(const char *file, int line, unsigned long val)
 {
 	printk("%s:%d: bad pte %016lx.\n", file, line, val);

@@ -22,10 +22,18 @@
 #include <asm/barrier.h>
 
 #include <linux/init.h>
+#include <linux/jump_label.h>
 #include <linux/types.h>
 
 #include <clocksource/arm_arch_timer.h>
 
+#if IS_ENABLED(CONFIG_ARM_ARCH_TIMER_OOL_WORKAROUND)
+extern struct static_key_false arch_timer_read_ool_enabled;
+#define needs_unstable_timer_counter_workaround() \
+	static_branch_unlikely(&arch_timer_read_ool_enabled)
+#else
+#define needs_unstable_timer_counter_workaround()  false
+#endif
 static inline void arch_timer_reg_write_cp15(int access, int reg, u32 val)
 {
 	if (access == ARCH_TIMER_PHYS_ACCESS) {

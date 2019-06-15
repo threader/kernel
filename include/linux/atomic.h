@@ -2,7 +2,13 @@
 #ifndef _LINUX_ATOMIC_H
 #define _LINUX_ATOMIC_H
 #include <asm/atomic.h>
+#ifndef atomic_set_release
+#define  atomic_set_release(v, i)	smp_store_release(&(v)->counter, (i))
+#endif
 
+#ifndef atomic_read_acquire
+#define  atomic_read_acquire(v)		smp_load_acquire(&(v)->counter)
+#endif
 /*
  * Provide __deprecated wrappers for the new interface, avoid flag day changes.
  * We need the ugly external functions to break header recursion hell.

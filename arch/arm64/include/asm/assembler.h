@@ -20,6 +20,9 @@
 #error "Only include this from assembly code"
 #endif
 
+#ifndef __ASM_ASSEMBLER_H
+#define __ASM_ASSEMBLER_H
+
 #include <asm/ptrace.h>
 #include <asm/thread_info.h>
 
@@ -156,6 +159,24 @@ lr	.req	x30		// link register
 	orr	\rd, \lbits, \hbits, lsl #32
 	.endm
 /*
+ * tcr_compute_pa_size - set TCR.(I)PS to the highest supported
+ * ID_AA64MMFR0_EL1.PARange value
+ *
+ *	tcr:		register with the TCR_ELx value to be updated
+ *	pos:		IPS or PS bitfield position
+ *	tmp{0,1}:	temporary registers
+ */
+	.macro	tcr_compute_pa_size, tcr, pos, tmp0, tmp1
+	mrs	\tmp0, SYS_ID_AA64MMFR0_EL1
+	// Narrow PARange to fit the PS field in TCR_ELx
+	ubfx	\tmp0, \tmp0, #ID_AA64MMFR0_PARANGE_SHIFT, #3
+	mov	\tmp1, #ID_AA64MMFR0_PARANGE_MAX
+	cmp	\tmp0, \tmp1
+	csel	\tmp0, \tmp1, \tmp0, hi
+	bfi	\tcr, \tmp0, \pos, #3
+	.endm
+
+/*
  * Annotate a function as being unsuitable for kprobes.
  */
 #ifdef CONFIG_KPROBES
@@ -166,3 +187,5 @@ lr	.req	x30		// link register
 #else
 #define NOKPROBE(x)
 #endif
+
+#endif	/* __ASM_ASSEMBLER_H */

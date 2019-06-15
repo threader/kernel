@@ -657,23 +657,25 @@ static inline void perf_fetch_caller_regs(struct pt_regs *regs)
 static __always_inline void
 perf_sw_event(u32 event_id, u64 nr, struct pt_regs *regs, u64 addr)
 {
-	struct pt_regs hot_regs;
-
-	if (static_key_false(&perf_swevent_enabled[event_id])) {
-		if (!regs) {
-			perf_fetch_caller_regs(&hot_regs);
-			regs = &hot_regs;
-		}
+	if (static_key_false(&perf_swevent_enabled[event_id]))
 		__perf_sw_event(event_id, nr, regs, addr);
-	}
 }
 
-extern struct static_key_deferred perf_sched_events;
+
+extern struct static_key_false perf_sched_events;
+
+static __always_inline bool
+perf_sw_migrate_enabled(void)
+{
+	if (static_key_false(&perf_swevent_enabled[PERF_COUNT_SW_CPU_MIGRATIONS]))
+		return true;
+	return false;
+}
 
 static inline void perf_event_task_sched_in(struct task_struct *prev,
 					    struct task_struct *task)
 {
-	if (static_key_false(&perf_sched_events.key))
+	if (static_branch_unlikely(&perf_sched_events))
 		__perf_event_task_sched_in(prev, task);
 }
 
@@ -699,6 +701,7 @@ DECLARE_PER_CPU(struct perf_callchain_entry, perf_callchain_entry);
 
 extern void perf_callchain_user(struct perf_callchain_entry *entry, struct pt_regs *regs);
 extern void perf_callchain_kernel(struct perf_callchain_entry *entry, struct pt_regs *regs);
+extern void put_callchain_buffers(void);
 
 static inline void perf_callchain_store(struct perf_callchain_entry *entry, u64 ip)
 {

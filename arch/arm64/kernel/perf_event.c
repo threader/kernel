@@ -1707,7 +1707,7 @@ static void __init cpu_pmu_init(struct arm_pmu *armpmu)
 
 static int __init init_hw_perf_events(void)
 {
-	u64 dfr = read_cpuid(ID_AA64DFR0_EL1);
+	u64 dfr = read_system_reg(SYS_ID_AA64DFR0_EL1);
 
 	switch ((dfr >> 8) & 0xf) {
 	case 0x1:	/* PMUv3 */

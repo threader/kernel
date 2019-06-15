@@ -17,8 +17,10 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <linux/bitops.h>
 #include <linux/init.h>
 #include <linux/sched.h>
+#include <linux/slab.h>
 #include <linux/mm.h>
 #include <linux/smp.h>
 #include <linux/percpu.h>
@@ -27,11 +29,25 @@
 #include <asm/tlbflush.h>
 #include <asm/cachetype.h>
 
+static u32 asid_bits;
+
+static atomic64_t asid_generation;
+static unsigned long *asid_map;
+
 #define asid_bits(reg) \
-	(((read_cpuid(ID_AA64MMFR0_EL1) & 0xf0) >> 2) + 8)
+	(((read_cpuid(SYS_ID_AA64MMFR0_EL1) & 0xf0) >> 2) + 8)
 
 #define ASID_FIRST_VERSION	(1 << MAX_ASID_BITS)
 
+#ifdef CONFIG_UNMAP_KERNEL_AT_EL0
+#define NUM_USER_ASIDS		(ASID_FIRST_VERSION >> 1)
+#define asid2idx(asid)		(((asid) & ~ASID_MASK) >> 1)
+#define idx2asid(idx)		(((idx) << 1) & ~ASID_MASK)
+#else
+#define NUM_USER_ASIDS		(ASID_FIRST_VERSION)
+#define asid2idx(asid)		((asid) & ~ASID_MASK)
+#define idx2asid(idx)		asid2idx(idx)
+#endif
 static DEFINE_RAW_SPINLOCK(cpu_asid_lock);
 unsigned int cpu_last_asid = ASID_FIRST_VERSION;
 
@@ -157,3 +173,38 @@ void __new_context(struct mm_struct *mm)
 	set_mm_context(mm, asid);
 	raw_spin_unlock(&cpu_asid_lock);
 }
+
+/* Errata workaround post TTBRx_EL1 update. */
+asmlinkage void post_ttbr_update_workaround(void)
+{
+	arm64_apply_bp_hardening();
+}
+
+static int asids_init(void)
+{
+	int fld = cpuid_feature_extract_field(read_cpuid(SYS_ID_AA64MMFR0_EL1), 4);
+
+	switch (fld) {
+	default:
+		pr_warn("Unknown ASID size (%d); assuming 8-bit\n", fld);
+		/* Fallthrough */
+	case 0:
+		asid_bits = 8;
+		break;
+	case 2:
+		asid_bits = 16;
+	}
+
+	/* If we end up with more CPUs than ASIDs, expect things to crash */
+	WARN_ON(NUM_USER_ASIDS < num_possible_cpus());
+	atomic64_set(&asid_generation, ASID_FIRST_VERSION);
+	asid_map = kzalloc(BITS_TO_LONGS(NUM_USER_ASIDS) * sizeof(*asid_map),
+			   GFP_KERNEL);
+	if (!asid_map)
+		panic("Failed to allocate bitmap for %lu ASIDs\n",
+		      NUM_USER_ASIDS);
+
+	pr_info("ASID allocator initialised with %lu entries\n", NUM_USER_ASIDS);
+	return 0;
+}
+early_initcall(asids_init);

@@ -18,6 +18,23 @@ struct sigqueue {
 	siginfo_t info;
 	struct user_struct *user;
 };
+static inline void clear_siginfo(struct siginfo *info)
+{
+	memset(info, 0, sizeof(*info));
+}
+enum siginfo_layout {
+	SIL_KILL,
+	SIL_TIMER,
+	SIL_POLL,
+	SIL_FAULT,
+	SIL_FAULT_MCEERR,
+	SIL_FAULT_BNDERR,
+	SIL_FAULT_PKUERR,
+	SIL_CHLD,
+	SIL_RT,
+	SIL_SYS,
+};
+
 
 /* flags values. */
 #define SIGQUEUE_PREALLOC	1
@@ -26,6 +43,8 @@ struct sigpending {
 	struct list_head list;
 	sigset_t signal;
 };
+
+enum siginfo_layout siginfo_layout(int sig, int si_code);
 
 /*
  * Define some primitives to manipulate sigset_t.
