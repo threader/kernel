@@ -199,6 +199,7 @@ typedef struct siginfo {
  */
 #define SEGV_MAPERR	(__SI_FAULT|1)	/* address not mapped to object */
 #define SEGV_ACCERR	(__SI_FAULT|2)	/* invalid permissions for mapped object */
+#define SEGV_BNDERR	(__SI_FAULT|3)	/* failed address bound checks */
 #define NSIGSEGV	2
 
 /*

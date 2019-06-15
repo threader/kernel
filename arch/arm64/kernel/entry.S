@@ -635,7 +635,7 @@ el0_sys:
 	 * System instructions, for trapped cache maintenance instructions
 	 */
 	enable_dbg
-	ct_user_exit
+	enable_irq
 	mov	x0, x25
 	mov	x1, sp
 	bl	do_sysinstr

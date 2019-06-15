@@ -197,6 +197,26 @@ static bool jump_entry_branch(struct jump_entry *entry)
 	return (unsigned long)entry->key & 1UL;
 }
 
+/***
+ * A 'struct static_key' uses a union such that it either points directly
+ * to a table of 'struct jump_entry' or to a linked list of modules which in
+ * turn point to 'struct jump_entry' tables.
+ *
+ * The two lower bits of the pointer are used to keep track of which pointer
+ * type is in use and to store the initial branch direction, we use an access
+ * function which preserves these bits.
+ */
+static void static_key_set_entries(struct static_key *key,
+				   struct jump_entry *entries)
+{
+	unsigned long type;
+
+	WARN_ON_ONCE((unsigned long)entries & JUMP_TYPE_MASK);
+	type = key->type & JUMP_TYPE_MASK;
+	key->entries = entries;
+	key->type |= type;
+}
+
 static enum jump_label_type jump_label_type(struct jump_entry *entry)
 {
 	struct static_key *key = jump_entry_key(entry);
@@ -239,21 +259,20 @@ void __init jump_label_init(void)
 	for (iter = iter_start; iter < iter_stop; iter++) {
 		struct static_key *iterk;
 
-		iterk = (struct static_key *)(unsigned long)iter->key;
-		arch_jump_label_transform_static(iter, jump_label_type(iterk));
+		/* rewrite NOPs */
+		if (jump_label_type(iter) == JUMP_LABEL_NOP)
+			arch_jump_label_transform_static(iter, JUMP_LABEL_NOP);
+
+		iterk = jump_entry_key(iter);
 		if (iterk == key)
 			continue;
 
 		key = iterk;
-		/*
-		 * Set key->entries to iter, but preserve JUMP_LABEL_TRUE_BRANCH.
-		 */
-		*((unsigned long *)&key->entries) += (unsigned long)iter;
-#ifdef CONFIG_MODULES
-		key->next = NULL;
-#endif
+		static_key_set_entries(key, iter);
 	}
+	static_key_initialized = true;
 	jump_label_unlock();
+	//cpus_read_unlock();
 }
 
 /* Disable any jump label entries in __init/__exit code */
