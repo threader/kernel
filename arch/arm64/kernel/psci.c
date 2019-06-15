@@ -21,6 +21,7 @@
 #include <linux/reboot.h>
 #include <linux/pm.h>
 #include <linux/delay.h>
+#include <linux/psci.h>
 #include <uapi/linux/psci.h>
 
 #include <asm/compiler.h>
@@ -35,6 +36,8 @@
 #define PSCI_POWER_STATE_TYPE_POWER_DOWN	1
 
 #define PSCI_POWER_STATE_BIT	BIT(30)
+
+struct psci_operations psci_ops;
 
 static int (*invoke_psci_fn)(u64, u64, u64, u64);
 typedef int (*psci_initcall_t)(const struct device_node *);
