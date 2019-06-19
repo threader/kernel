@@ -17,8 +17,6 @@
 #include <asm/page.h>
 #include <asm/mmu.h>
 
-#include <linux/rh_kabi.h>
-
 #ifndef AT_VECTOR_SIZE_ARCH
 #define AT_VECTOR_SIZE_ARCH 0
 #endif
