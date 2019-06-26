@@ -13,6 +13,7 @@
 
 #include <linux/io.h>
 #include <linux/of.h>
+#include <linux/async.h>
 #include <linux/blkdev.h>
 #include <linux/scsi/ufs/ufshcd.h>
 #include <crypto/ice.h>
@@ -52,8 +53,24 @@ void ufs_qcom_ice_print_regs(struct ufs_qcom_host *qcom_host)
 		pr_err("REG_UFS_QCOM_ICE_CTRL_INFO_2_%d = 0x%08X\n", i,
 			ufshcd_readl(qcom_host->hba,
 				(REG_UFS_QCOM_ICE_CTRL_INFO_2_n + 8 * i)));
+
 	}
 
+}
+
+static void ufs_qcom_ice_success_cb(void *host_ctrl,
+				enum ice_event_completion evt)
+{
+	struct ufs_qcom_host *qcom_host = (struct ufs_qcom_host *)host_ctrl;
+
+	if (qcom_host->ice.state == UFS_QCOM_ICE_STATE_DISABLED &&
+	    evt == ICE_INIT_COMPLETION)
+		qcom_host->ice.state = UFS_QCOM_ICE_STATE_ACTIVE;
+	 else if (qcom_host->ice.state == UFS_QCOM_ICE_STATE_SUSPENDED &&
+		   evt == ICE_RESUME_COMPLETION)
+		qcom_host->ice.state = UFS_QCOM_ICE_STATE_ACTIVE;
+
+	complete(&qcom_host->ice.async_done);
 }
 
 static void ufs_qcom_ice_error_cb(void *host_ctrl, enum ice_error_code evt)
@@ -65,6 +82,8 @@ static void ufs_qcom_ice_error_cb(void *host_ctrl, enum ice_error_code evt)
 
 	if (qcom_host->ice.state == UFS_QCOM_ICE_STATE_ACTIVE)
 		qcom_host->ice.state = UFS_QCOM_ICE_STATE_DISABLED;
+
+	complete(&qcom_host->ice.async_done);
 }
 
 static struct platform_device *ufs_qcom_ice_get_pdevice(struct device *ufs_dev)
@@ -176,17 +195,33 @@ out:
 int ufs_qcom_ice_init(struct ufs_qcom_host *qcom_host)
 {
 	struct device *ufs_dev = qcom_host->hba->dev;
-	int err;
+	int err = -EINVAL;
 
+	init_completion(&qcom_host->ice.async_done);
 	err = qcom_host->ice.vops->init(qcom_host->ice.pdev,
 				qcom_host,
+				ufs_qcom_ice_success_cb,
 				ufs_qcom_ice_error_cb);
 	if (err) {
 		dev_err(ufs_dev, "%s: ice init failed. err = %d\n",
 			__func__, err);
 		goto out;
-	} else {
-		qcom_host->ice.state = UFS_QCOM_ICE_STATE_ACTIVE;
+	}
+
+	if (!wait_for_completion_timeout(&qcom_host->ice.async_done,
+			msecs_to_jiffies(UFS_QCOM_ICE_COMPLETION_TIMEOUT_MS))) {
+		dev_err(qcom_host->hba->dev,
+			"%s: error. got timeout after %d ms\n",
+			__func__, UFS_QCOM_ICE_COMPLETION_TIMEOUT_MS);
+		err = -ETIMEDOUT;
+		goto out;
+	}
+
+	if (qcom_host->ice.state != UFS_QCOM_ICE_STATE_ACTIVE) {
+		dev_err(qcom_host->hba->dev,
+			"%s: error. ice.state (%d) is not in active state\n",
+			__func__, qcom_host->ice.state);
+		err = -EINVAL;
 	}
 
 	qcom_host->dbg_print_en |= UFS_QCOM_ICE_DEFAULT_DBG_PRINT_EN;
@@ -255,7 +290,7 @@ int ufs_qcom_ice_cfg(struct ufs_qcom_host *qcom_host, struct scsi_cmnd *cmd)
 		return -EINVAL;
 	}
 
-	memset(&ice_set, 0, sizeof(ice_set));
+	memset(&ice_set, sizeof(ice_set), 0);
 	if (qcom_host->ice.vops->config) {
 		err = qcom_host->ice.vops->config(qcom_host->ice.pdev,
 							req, &ice_set);
@@ -344,6 +379,8 @@ int ufs_qcom_ice_reset(struct ufs_qcom_host *qcom_host)
 	if (qcom_host->ice.state != UFS_QCOM_ICE_STATE_ACTIVE)
 		goto out;
 
+	init_completion(&qcom_host->ice.async_done);
+
 	if (qcom_host->ice.vops->reset) {
 		err = qcom_host->ice.vops->reset(qcom_host->ice.pdev);
 		if (err) {
@@ -351,6 +388,14 @@ int ufs_qcom_ice_reset(struct ufs_qcom_host *qcom_host)
 				__func__, err);
 			goto out;
 		}
+	}
+
+	if (!wait_for_completion_timeout(&qcom_host->ice.async_done,
+	     msecs_to_jiffies(UFS_QCOM_ICE_COMPLETION_TIMEOUT_MS))) {
+		dev_err(dev,
+			"%s: error. got timeout after %d ms\n",
+			__func__, UFS_QCOM_ICE_COMPLETION_TIMEOUT_MS);
+		err = -ETIMEDOUT;
 	}
 
 	if (qcom_host->ice.state != UFS_QCOM_ICE_STATE_ACTIVE) {
@@ -394,15 +439,28 @@ int ufs_qcom_ice_resume(struct ufs_qcom_host *qcom_host)
 		return -EINVAL;
 	}
 
+	init_completion(&qcom_host->ice.async_done);
+
 	if (qcom_host->ice.vops->resume) {
 		err = qcom_host->ice.vops->resume(qcom_host->ice.pdev);
 		if (err) {
 			dev_err(dev, "%s: ice_vops->resume failed. err %d\n",
 				__func__, err);
-			return err;
+			return -EINVAL;
 		}
 	}
-	qcom_host->ice.state = UFS_QCOM_ICE_STATE_ACTIVE;
+
+	if (!wait_for_completion_timeout(&qcom_host->ice.async_done,
+			msecs_to_jiffies(UFS_QCOM_ICE_COMPLETION_TIMEOUT_MS))) {
+		dev_err(dev,
+			"%s: error. got timeout after %d ms\n",
+			__func__, UFS_QCOM_ICE_COMPLETION_TIMEOUT_MS);
+		err = -ETIMEDOUT;
+		goto out;
+	}
+
+	if (qcom_host->ice.state != UFS_QCOM_ICE_STATE_ACTIVE)
+		err = -EINVAL;
 out:
 	return err;
 }
@@ -467,7 +525,7 @@ int ufs_qcom_ice_get_status(struct ufs_qcom_host *qcom_host, int *ice_status)
 	int err = 0;
 	int stat = -EINVAL;
 
-	*ice_status = 0;
+	ice_status = 0;
 
 	dev = qcom_host->hba->dev;
 	if (!dev) {
