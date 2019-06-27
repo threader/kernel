@@ -260,9 +260,9 @@ struct buffer_info *get_registered_buf(struct msm_vidc_inst *inst,
 	list_for_each_entry(temp, &inst->registeredbufs.list, list) {
 		for (i = 0; (i < temp->num_planes)
 			&& (i < VIDEO_MAX_PLANES); i++) {
-			bool ion_hndl_matches = temp->handle[i] ?
-						msm_smem_compare_buffers(inst->mem_client, fd,
-						temp->handle[i]->smem_priv) : false;
+                        bool ion_hndl_matches =
+                                msm_smem_compare_buffers(inst->mem_client, fd,
+                                temp->handle[i]->smem_priv);
 			if (temp &&
 				((fd == temp->fd[i]) ||
 				(device_addr == temp->device_addr[i])) &&
@@ -497,7 +497,6 @@ int map_and_register_buf(struct msm_vidc_inst *inst, struct v4l2_buffer *b)
 			binfo, b->m.planes[0].reserved[0], b->type);
 
 	for (i = 0; i < b->length; ++i) {
-		rc = 0;
 		if (EXTRADATA_IDX(b->length) &&
 			(i == EXTRADATA_IDX(b->length)) &&
 			!b->m.planes[i].length) {
@@ -508,9 +507,7 @@ int map_and_register_buf(struct msm_vidc_inst *inst, struct v4l2_buffer *b)
 		if (temp && !is_dynamic_output_buffer_mode(b, inst)) {
 			dprintk(VIDC_DBG,
 				"This memory region has already been prepared\n");
-			rc = 0;
-			mutex_unlock(&inst->registeredbufs.lock);
-			goto exit;
+			rc = -EINVAL;
 		}
 
 		if (temp && is_dynamic_output_buffer_mode(b, inst) &&
@@ -528,28 +525,17 @@ int map_and_register_buf(struct msm_vidc_inst *inst, struct v4l2_buffer *b)
 				&inst->registeredbufs.list, list) {
 				if (iterator == temp) {
 					rc = buf_ref_get(inst, temp);
-					save_v4l2_buffer(b, temp);
+					if (rc > 0) {
+						save_v4l2_buffer(b, temp);
+						rc = -EEXIST;
+					}
 					break;
 				}
 			}
 		}
 		mutex_unlock(&inst->registeredbufs.lock);
-		/*
-		 * rc == 1,
-		 * buffer is mapped, fw has released all reference, so skip
-		 * mapping and queue it immediately.
-		 *
-		 * rc == 2,
-		 * buffer is mapped and fw is holding a reference, hold it in
-		 * the driver and queue it later when fw has released
-		 */
-		if (rc == 1) {
-			rc = 0;
+		if (rc < 0)
 			goto exit;
-		} else if (rc == 2) {
-			rc = -EEXIST;
-			goto exit;
-		}
 
 		//if (!is_dynamic_output_buffer_mode(b, inst))
                 if (check_same_fd_handle)
@@ -937,11 +923,16 @@ int msm_vidc_qbuf(void *instance, struct v4l2_buffer *b)
 	if (!inst || !b || !valid_v4l2_buffer(b, inst))
 		return -EINVAL;
 
-	rc = map_and_register_buf(inst, b);
-	if (rc == -EEXIST)
-		return 0;
-	if (rc)
-		return rc;
+	if (is_dynamic_output_buffer_mode(b, inst)) {
+		if (b->m.planes[0].reserved[0])
+			inst->map_output_buffer = true;
+
+		rc = map_and_register_buf(inst, b);
+		if (rc == -EEXIST)
+			return 0;
+		if (rc)
+			return rc;
+	}
 
 	for (i = 0; i < b->length; ++i) {
 		if (!inst->map_output_buffer)
@@ -1017,7 +1008,7 @@ int msm_vidc_dqbuf(void *instance, struct v4l2_buffer *b)
 	if (rc)
 		return rc;
 
-	for (i = 0; i < b->length; i++) {
+	for (i = b->length - 1; i >= 0 ; i--) {
 		if (!inst->map_output_buffer)
 			continue;
 		if (EXTRADATA_IDX(b->length) &&
@@ -1036,7 +1027,7 @@ int msm_vidc_dqbuf(void *instance, struct v4l2_buffer *b)
 		}
 
 		b->m.planes[i].m.userptr = buffer_info->uvaddr[i];
-		if (!(inst->flags & VIDC_SECURE) && !b->m.planes[i].m.userptr) {
+		if (!b->m.planes[i].m.userptr) {
 			dprintk(VIDC_ERR,
 			"%s: Failed to find user virtual address, 0x%lx, %d, %d\n",
 			__func__, b->m.planes[i].m.userptr, b->type, i);
@@ -1443,9 +1434,9 @@ static void cleanup_instance(struct msm_vidc_inst *inst)
 			msm_comm_smem_free(inst, inst->extradata_handle);
 
 		debugfs_remove_recursive(inst->debugfs_root);
+
 		mutex_lock(&inst->pending_getpropq.lock);
-		WARN_ON(!list_empty(&inst->pending_getpropq.list)
-			&& (msm_vidc_debug & VIDC_INFO));
+		WARN_ON(!list_empty(&inst->pending_getpropq.list));
 		mutex_unlock(&inst->pending_getpropq.lock);
 	}
 }

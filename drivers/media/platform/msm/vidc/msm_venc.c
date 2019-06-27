@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -154,6 +154,29 @@ static const char *const vp8_profile_level[] = {
 	"2.0",
 	"3.0",
 };
+
+static const char *const mpeg_video_vidc_extradata[] = {
+	"Extradata none",
+	"Extradata MB Quantization",
+	"Extradata Interlace Video",
+	"Extradata VC1 Framedisp",
+	"Extradata VC1 Seqdisp",
+	"Extradata timestamp",
+	"Extradata S3D Frame Packing",
+	"Extradata Frame Rate",
+	"Extradata Panscan Window",
+	"Extradata Recovery point SEI",
+	"Extradata Closed Caption UD",
+	"Extradata AFD UD",
+	"Extradata Multislice info",
+	"Extradata number of concealed MB",
+	"Extradata metadata filler",
+	"Extradata input crop",
+	"Extradata digital zoom",
+	"Extradata aspect ratio",
+	"Extradata macroblock metadata",
+};
+
 static const char *const perf_level[] = {
 	"Nominal",
 	"Performance",
@@ -177,13 +200,6 @@ static const char *const intra_refresh_modes[] = {
 static const char *const timestamp_mode[] = {
 	"Honor",
 	"Ignore",
-};
-
-static const char *const iframe_sizes[] = {
-	"Default",
-	"Medium",
-	"Huge",
-	"Unlimited"
 };
 
 static struct msm_vidc_ctrl msm_venc_ctrls[] = {
@@ -1128,70 +1144,7 @@ static struct msm_vidc_ctrl msm_venc_ctrls[] = {
 		.default_value = V4L2_CID_MPEG_VIDC_VIDEO_VENC_BITRATE_ENABLE,
 		.step = 1,
 	},
-	{
-		.id = V4L2_CID_MPEG_VIDC_VIDEO_COLOR_SPACE,
-		.name = "Set Color space",
-		.type = V4L2_CTRL_TYPE_INTEGER,
-		.minimum = MSM_VIDC_BT709_5,
-		.maximum = MSM_VIDC_BT2020,
-		.default_value = MSM_VIDC_BT601_6_625,
-		.step = 1,
-		.qmenu = NULL,
-	},
-	{
-		.id = V4L2_CID_MPEG_VIDC_VIDEO_FULL_RANGE,
-		.name = "Set Color space range",
-		.type = V4L2_CTRL_TYPE_BOOLEAN,
-		.minimum = V4L2_CID_MPEG_VIDC_VIDEO_FULL_RANGE_DISABLE,
-		.maximum = V4L2_CID_MPEG_VIDC_VIDEO_FULL_RANGE_ENABLE,
-		.default_value = V4L2_CID_MPEG_VIDC_VIDEO_FULL_RANGE_DISABLE,
-		.step = 1,
-	},
-	{
-		.id = V4L2_CID_MPEG_VIDC_VIDEO_TRANSFER_CHARS,
-		.name = "Set Color space transfer characterstics",
-		.type = V4L2_CTRL_TYPE_INTEGER,
-		.minimum = MSM_VIDC_TRANSFER_BT709_5,
-		.maximum = MSM_VIDC_TRANSFER_BT_2020_12,
-		.default_value = MSM_VIDC_TRANSFER_601_6_625,
-		.step = 1,
-		.qmenu = NULL,
-	},
-	{
-		.id = V4L2_CID_MPEG_VIDC_VIDEO_MATRIX_COEFFS,
-		.name = "Set Color space matrix coefficients",
-		.type = V4L2_CTRL_TYPE_INTEGER,
-		.minimum = MSM_VIDC_MATRIX_BT_709_5,
-		.maximum = MSM_VIDC_MATRIX_BT_2020_CONST,
-		.default_value = MSM_VIDC_MATRIX_601_6_625,
-		.step = 1,
-		.qmenu = NULL,
-	},
-	{
-		.id = V4L2_CID_MPEG_VIDC_VIDEO_VPE_CSC,
-		.name = "Set VPE Color space conversion coefficients",
-		.type = V4L2_CTRL_TYPE_INTEGER,
-		.minimum = V4L2_CID_MPEG_VIDC_VIDEO_VPE_CSC_DISABLE,
-		.maximum = V4L2_CID_MPEG_VIDC_VIDEO_VPE_CSC_ENABLE,
-		.default_value = V4L2_CID_MPEG_VIDC_VIDEO_VPE_CSC_DISABLE,
-		.step = 1,
-	},
-	{
-		.id = V4L2_CID_MPEG_VIDC_VIDEO_IFRAME_SIZE_TYPE,
-		.name = "Bounds of I-frame size",
-		.type = V4L2_CTRL_TYPE_MENU,
-		.minimum = V4L2_CID_MPEG_VIDC_VIDEO_IFRAME_SIZE_DEFAULT,
-		.maximum = V4L2_CID_MPEG_VIDC_VIDEO_IFRAME_SIZE_UNLIMITED,
-		.default_value = V4L2_CID_MPEG_VIDC_VIDEO_IFRAME_SIZE_DEFAULT,
-		.menu_skip_mask = ~(
-			(1 << V4L2_CID_MPEG_VIDC_VIDEO_IFRAME_SIZE_DEFAULT) |
-			(1 << V4L2_CID_MPEG_VIDC_VIDEO_IFRAME_SIZE_MEDIUM) |
-			(1 << V4L2_CID_MPEG_VIDC_VIDEO_IFRAME_SIZE_HUGE) |
-			(1 << V4L2_CID_MPEG_VIDC_VIDEO_IFRAME_SIZE_UNLIMITED)),
-		.qmenu = iframe_sizes,
-	},
 };
-
 
 #define NUM_CTRLS ARRAY_SIZE(msm_venc_ctrls)
 
@@ -1278,8 +1231,6 @@ static struct msm_vidc_format venc_formats[] = {
 		.type = OUTPUT_PORT,
 	},
 };
-
-static int msm_venc_set_csc(struct msm_vidc_inst *inst);
 
 static int msm_venc_queue_setup(struct vb2_queue *q,
 				const struct v4l2_format *fmt,
@@ -1957,19 +1908,6 @@ static inline int venc_v4l2_to_hal(int id, int value)
 		default:
 			goto unknown_value;
 		}
-	case V4L2_CID_MPEG_VIDC_VIDEO_IFRAME_SIZE_TYPE:
-		switch (value) {
-		case V4L2_CID_MPEG_VIDC_VIDEO_IFRAME_SIZE_DEFAULT:
-			return HAL_IFRAMESIZE_TYPE_DEFAULT;
-		case V4L2_CID_MPEG_VIDC_VIDEO_IFRAME_SIZE_MEDIUM:
-			return HAL_IFRAMESIZE_TYPE_MEDIUM;
-		case V4L2_CID_MPEG_VIDC_VIDEO_IFRAME_SIZE_HUGE:
-			return HAL_IFRAMESIZE_TYPE_HUGE;
-		case V4L2_CID_MPEG_VIDC_VIDEO_IFRAME_SIZE_UNLIMITED:
-			return HAL_IFRAMESIZE_TYPE_UNLIMITED;
-		default:
-			goto unknown_value;
-		}
 	}
 
 unknown_value:
@@ -2008,8 +1946,6 @@ static int try_set_ctrl(struct msm_vidc_inst *inst, struct v4l2_ctrl *ctrl)
 	u32 hier_p_layers = 0, hier_b_layers = 0, mbi_statistics_mode = 0;
 	struct hal_venc_perf_mode venc_mode;
 	int max_hierp_layers;
-	struct hal_video_signal_info signal_info = {0};
-	enum hal_iframesize_type iframesize_type = HAL_IFRAMESIZE_TYPE_DEFAULT;
 
 	if (!inst || !inst->core || !inst->core->device) {
 		dprintk(VIDC_ERR, "%s invalid parameters\n", __func__);
@@ -2523,12 +2459,34 @@ static int try_set_ctrl(struct msm_vidc_inst *inst, struct v4l2_ctrl *ctrl)
 	}
 	case V4L2_CID_MPEG_VIDC_VIDEO_INTRA_REFRESH_MODE: {
 		struct v4l2_ctrl *air_mbs, *air_ref, *cir_mbs;
+		bool is_cont_intra_supported = false;
+
 		air_mbs = TRY_GET_CTRL(V4L2_CID_MPEG_VIDC_VIDEO_AIR_MBS);
 		air_ref = TRY_GET_CTRL(V4L2_CID_MPEG_VIDC_VIDEO_AIR_REF);
 		cir_mbs = TRY_GET_CTRL(V4L2_CID_MPEG_VIDC_VIDEO_CIR_MBS);
 
-		property_id =
-			HAL_PARAM_VENC_INTRA_REFRESH;
+		is_cont_intra_supported =
+		(inst->fmts[CAPTURE_PORT]->fourcc == V4L2_PIX_FMT_H264) ||
+		(inst->fmts[CAPTURE_PORT]->fourcc == V4L2_PIX_FMT_HEVC);
+
+		if (is_cont_intra_supported) {
+			if (air_mbs || air_ref || cir_mbs)
+				enable.enable = true;
+			else
+				enable.enable = false;
+
+			rc = call_hfi_op(hdev, session_set_property,
+				(void *)inst->session,
+				HAL_PARAM_VENC_CONSTRAINED_INTRA_PRED, &enable);
+			if (rc) {
+				dprintk(VIDC_ERR,
+					"Failed to set constrained intra\n");
+				rc = -EINVAL;
+				break;
+			}
+		}
+
+		property_id = HAL_PARAM_VENC_INTRA_REFRESH;
 
 		intra_refresh.mode = ctrl->val;
 		intra_refresh.air_mbs = air_mbs->val;
@@ -2934,78 +2892,6 @@ static int try_set_ctrl(struct msm_vidc_inst *inst, struct v4l2_ctrl *ctrl)
 		pdata = &enable;
 		break;
 	}
-	case V4L2_CID_MPEG_VIDC_VIDEO_COLOR_SPACE:
-	{
-		signal_info.color_space = ctrl->val;
-		temp_ctrl = TRY_GET_CTRL(V4L2_CID_MPEG_VIDC_VIDEO_FULL_RANGE);
-		signal_info.full_range = temp_ctrl ? temp_ctrl->val : 0;
-		temp_ctrl =
-			TRY_GET_CTRL(V4L2_CID_MPEG_VIDC_VIDEO_TRANSFER_CHARS);
-		signal_info.transfer_chars = temp_ctrl ? temp_ctrl->val : 0;
-		temp_ctrl =
-			TRY_GET_CTRL(V4L2_CID_MPEG_VIDC_VIDEO_MATRIX_COEFFS);
-		signal_info.matrix_coeffs = temp_ctrl ? temp_ctrl->val : 0;
-		property_id = HAL_PARAM_VENC_VIDEO_SIGNAL_INFO;
-		pdata = &signal_info;
-		break;
-	}
-	case V4L2_CID_MPEG_VIDC_VIDEO_FULL_RANGE:
-	{
-		signal_info.full_range = ctrl->val;
-		temp_ctrl = TRY_GET_CTRL(V4L2_CID_MPEG_VIDC_VIDEO_COLOR_SPACE);
-		signal_info.color_space = temp_ctrl ? temp_ctrl->val : 0;
-		temp_ctrl =
-			TRY_GET_CTRL(V4L2_CID_MPEG_VIDC_VIDEO_TRANSFER_CHARS);
-		signal_info.transfer_chars = temp_ctrl ? temp_ctrl->val : 0;
-		temp_ctrl =
-			TRY_GET_CTRL(V4L2_CID_MPEG_VIDC_VIDEO_MATRIX_COEFFS);
-		signal_info.matrix_coeffs = temp_ctrl ? temp_ctrl->val : 0;
-		property_id = HAL_PARAM_VENC_VIDEO_SIGNAL_INFO;
-		pdata = &signal_info;
-		break;
-	}
-	case V4L2_CID_MPEG_VIDC_VIDEO_TRANSFER_CHARS:
-	{
-		signal_info.transfer_chars = ctrl->val;
-		temp_ctrl = TRY_GET_CTRL(V4L2_CID_MPEG_VIDC_VIDEO_FULL_RANGE);
-		signal_info.full_range = temp_ctrl ? temp_ctrl->val : 0;
-		temp_ctrl = TRY_GET_CTRL(V4L2_CID_MPEG_VIDC_VIDEO_COLOR_SPACE);
-		signal_info.color_space = temp_ctrl ? temp_ctrl->val : 0;
-		temp_ctrl =
-			TRY_GET_CTRL(V4L2_CID_MPEG_VIDC_VIDEO_MATRIX_COEFFS);
-		signal_info.matrix_coeffs = temp_ctrl ? temp_ctrl->val : 0;
-		property_id = HAL_PARAM_VENC_VIDEO_SIGNAL_INFO;
-		pdata = &signal_info;
-		break;
-	}
-	case V4L2_CID_MPEG_VIDC_VIDEO_MATRIX_COEFFS:
-	{
-		signal_info.matrix_coeffs = ctrl->val;
-		temp_ctrl = TRY_GET_CTRL(V4L2_CID_MPEG_VIDC_VIDEO_FULL_RANGE);
-		signal_info.full_range = temp_ctrl ? temp_ctrl->val : 0;
-		temp_ctrl =
-			TRY_GET_CTRL(V4L2_CID_MPEG_VIDC_VIDEO_TRANSFER_CHARS);
-		signal_info.transfer_chars = temp_ctrl ? temp_ctrl->val : 0;
-		temp_ctrl = TRY_GET_CTRL(V4L2_CID_MPEG_VIDC_VIDEO_COLOR_SPACE);
-		signal_info.color_space = temp_ctrl ? temp_ctrl->val : 0;
-		property_id = HAL_PARAM_VENC_VIDEO_SIGNAL_INFO;
-		pdata = &signal_info;
-		break;
-	}
-	case V4L2_CID_MPEG_VIDC_VIDEO_VPE_CSC:
-		if (ctrl->val == V4L2_CID_MPEG_VIDC_VIDEO_VPE_CSC_ENABLE) {
-			rc = msm_venc_set_csc(inst);
-			if (rc)
-				dprintk(VIDC_ERR, "fail to set csc: %d\n", rc);
-		}
-		break;
-	case V4L2_CID_MPEG_VIDC_VIDEO_IFRAME_SIZE_TYPE:
-		property_id = HAL_PARAM_VENC_IFRAMESIZE_TYPE;
-		iframesize_type = venc_v4l2_to_hal(
-				V4L2_CID_MPEG_VIDC_VIDEO_IFRAME_SIZE_TYPE,
-				ctrl->val);
-		pdata = &iframesize_type;
-		break;
 	default:
 		dprintk(VIDC_ERR, "Unsupported index: %x\n", ctrl->id);
 		rc = -ENOTSUPP;
@@ -3431,7 +3317,7 @@ exit:
 	return rc;
 }
 
-static int msm_venc_set_csc(struct msm_vidc_inst *inst)
+int msm_venc_set_csc(struct msm_vidc_inst *inst)
 {
 	int rc = 0;
 	int count = 0;
@@ -3459,7 +3345,6 @@ static int msm_venc_set_csc(struct msm_vidc_inst *inst)
 int msm_venc_s_fmt(struct msm_vidc_inst *inst, struct v4l2_format *f)
 {
 	struct msm_vidc_format *fmt = NULL;
-	struct hal_frame_size frame_sz = {0};
 	int rc = 0;
 	int i;
 	struct hfi_device *hdev;
@@ -3474,6 +3359,10 @@ int msm_venc_s_fmt(struct msm_vidc_inst *inst, struct v4l2_format *f)
 		return -EINVAL;
 	}
 	hdev = inst->core->device;
+
+	if (msm_vidc_vpe_csc_601_to_709) {
+		msm_venc_set_csc(inst);
+	}
 
 	if (f->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
 		fmt = msm_comm_get_pixel_fmt_fourcc(venc_formats,
@@ -3496,6 +3385,9 @@ int msm_venc_s_fmt(struct msm_vidc_inst *inst, struct v4l2_format *f)
 			goto exit;
 		}
 	} else if (f->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE) {
+		struct hal_frame_size frame_sz;
+		struct hal_video_signal_info signal_info = {0};
+
 		inst->prop.width[OUTPUT_PORT] = f->fmt.pix_mp.width;
 		inst->prop.height[OUTPUT_PORT] = f->fmt.pix_mp.height;
 
@@ -3548,6 +3440,54 @@ int msm_venc_s_fmt(struct msm_vidc_inst *inst, struct v4l2_format *f)
 				"Failed to set input color format\n");
 			goto exit;
 		}
+
+		/* Configure frame color format characteristics */
+		if (f->fmt.pix_mp.colorspace) {
+			switch (f->fmt.pix_mp.colorspace) {
+				case V4L2_COLORSPACE_REC709:
+					signal_info.color_space =
+						HAL_VIDEO_COLOR_SPACE_709;
+					signal_info.clamped = true;
+					break;
+				case V4L2_COLORSPACE_BT878:
+					/* equiv to ITU-R BT.601 clamped */
+					signal_info.clamped = true;
+					/* fall thru */
+				case V4L2_COLORSPACE_470_SYSTEM_BG:
+					/* equiv to ITU-R BT.601 */
+					signal_info.color_space =
+						HAL_VIDEO_COLOR_SPACE_601;
+					break;
+				default:
+					dprintk(VIDC_ERR, "Colorspace %d not supported\n",
+							f->fmt.pix_mp.colorspace);
+					rc = -ENOTSUPP;
+					goto exit;
+			}
+
+			switch (f->fmt.pix_mp.pixelformat) {
+				case V4L2_PIX_FMT_NV12:
+				case V4L2_PIX_FMT_NV21:
+					rc = call_hfi_op(hdev, session_set_property,
+							inst->session,
+							HAL_PARAM_VENC_VIDEO_SIGNAL_INFO,
+							&signal_info);
+					if (rc) {
+						dprintk(VIDC_ERR,
+								"Failed to set the colorspace: %d\n",
+								rc);
+						goto exit;
+					}
+					break;
+				default:
+					dprintk(VIDC_ERR,
+							"Colorspace %d not supported for format %d\n",
+							f->fmt.pix_mp.colorspace,
+							f->fmt.pix_mp.pixelformat);
+					rc = -ENOTSUPP;
+					break;
+			}
+		}
 	} else {
 		dprintk(VIDC_ERR, "%s: Unsupported buf type: %d\n",
 			__func__, f->type);
@@ -3584,9 +3524,8 @@ int msm_venc_s_fmt(struct msm_vidc_inst *inst, struct v4l2_format *f)
 		frame_sz.width = inst->prop.width[CAPTURE_PORT];
 		frame_sz.height = inst->prop.height[CAPTURE_PORT];
 		frame_sz.buffer_type = HAL_BUFFER_OUTPUT;
-		rc = call_hfi_op(hdev, session_set_property, (void *)
-				inst->session, HAL_PARAM_FRAME_SIZE,
-				&frame_sz);
+		rc = call_hfi_op(hdev, session_set_property, inst->session,
+				HAL_PARAM_FRAME_SIZE, &frame_sz);
 		if (rc) {
 			dprintk(VIDC_ERR,
 					"Failed to set OUTPUT framesize\n");
