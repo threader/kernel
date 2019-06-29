@@ -1302,6 +1302,8 @@ struct task_struct {
 	unsigned sched_reset_on_fork:1;
 	unsigned sched_contributes_to_load:1;
 
+	struct restart_block		restart_block;
+
 	unsigned long atomic_flags; /* Flags needing atomic access. */
 
 	pid_t pid;

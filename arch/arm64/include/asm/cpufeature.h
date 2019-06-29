@@ -10,6 +10,7 @@
 #define __ASM_CPUFEATURE_H
 
 #include <asm/cpucaps.h>
+#include <asm/cputype.h>
 #include <asm/hwcap.h>
 #include <asm/sysreg.h>
 
@@ -371,6 +372,12 @@ static inline s64 arm64_ftr_value(struct arm64_ftr_bits *ftrp, u64 val)
 	return ftrp->sign ?
 		cpuid_feature_extract_field_width(val, ftrp->shift, ftrp->width) :
 		cpuid_feature_extract_unsigned_field_width(val, ftrp->shift, ftrp->width);
+}
+
+static inline bool system_uses_ttbr0_pan(void)
+{
+	return IS_ENABLED(CONFIG_ARM64_SW_TTBR0_PAN) &&
+		!cpus_have_const_cap(ARM64_HAS_PAN);
 }
 
 #define ARM64_SSBD_UNKNOWN		-1
