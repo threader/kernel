@@ -132,9 +132,9 @@
 	.endm
 
 	.macro	get_thread_info, rd
-	mov	\rd, sp
-	and	\rd, \rd, #~(THREAD_SIZE - 1)	// top of stack
-	.endm
+	 mov	\rd, sp
+	 and	\rd, \rd, #~(THREAD_SIZE - 1)	// top of stack
+	 .endm
 
 /*
  * These are the registers used in the syscall handler, and allow us to

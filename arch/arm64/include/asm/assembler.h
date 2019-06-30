@@ -196,5 +196,13 @@ lr	.req	x30		// link register
 #else
 #define NOKPROBE(x)
 #endif
+/*
+ * Return the current thread_info.
+ *
+ *	.macro	get_thread_info, rd
+ *	mrs	\rd, sp_el0
+ *\	.endm
+
 
 #endif	/* __ASM_ASSEMBLER_H */
+#endif
