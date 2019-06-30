@@ -21,11 +21,15 @@
 #include <linux/init.h>
 #include <linux/linkage.h>
 
+#include <asm/alternative.h>
 #include <asm/assembler.h>
 #include <asm/asm-offsets.h>
+#include <asm/cpufeature.h>
 #include <asm/errno.h>
 #include <asm/esr.h>
 #include <asm/thread_info.h>
+#include <asm/uaccess.h>
+#include <asm/asm-uaccess.h>
 #include <asm/unistd.h>
 
 /*
@@ -38,33 +42,54 @@
 #define BAD_ERROR	3
 
 	.macro	kernel_entry, el, regsize = 64
-	sub	sp, sp, #S_FRAME_SIZE - S_LR	// room for LR, SP, SPSR, ELR
 	.if	\regsize == 32
 	mov	w0, w0				// zero upper 32 bits of x0
 	.endif
-	push	x28, x29
-	push	x26, x27
-	push	x24, x25
-	push	x22, x23
-	push	x20, x21
-	push	x18, x19
-	push	x16, x17
-	push	x14, x15
-	push	x12, x13
-	push	x10, x11
-	push	x8, x9
-	push	x6, x7
-	push	x4, x5
-	push	x2, x3
-	push	x0, x1
+	stp	x0, x1, [sp, #16 * 0]
+	stp	x2, x3, [sp, #16 * 1]
+	stp	x4, x5, [sp, #16 * 2]
+	stp	x6, x7, [sp, #16 * 3]
+	stp	x8, x9, [sp, #16 * 4]
+	stp	x10, x11, [sp, #16 * 5]
+	stp	x12, x13, [sp, #16 * 6]
+	stp	x14, x15, [sp, #16 * 7]
+	stp	x16, x17, [sp, #16 * 8]
+	stp	x18, x19, [sp, #16 * 9]
+	stp	x20, x21, [sp, #16 * 10]
+	stp	x22, x23, [sp, #16 * 11]
+	stp	x24, x25, [sp, #16 * 12]
+	stp	x26, x27, [sp, #16 * 13]
+	stp	x28, x29, [sp, #16 * 14]
+
 	.if	\el == 0
 	mrs	x21, sp_el0
-	get_thread_info tsk			// Ensure MDSCR_EL1.SS is clear,
+#ifdef CONFIG_THREAD_INFO_IN_TASK
+	ldr_this_cpu	tsk, __entry_task, x20	// Ensure MDSCR_EL1.SS is clear,
+	ldr	x19, [tsk, #TSK_TI_FLAGS]	// since we can unmask debug
+#else
+	mov	tsk, sp
+	and	tsk, tsk, #~(THREAD_SIZE - 1)	// Ensure MDSCR_EL1.SS is clear,
 	ldr	x19, [tsk, #TI_FLAGS]		// since we can unmask debug
+#endif
 	disable_step_tsk x19, x20		// exceptions when scheduling.
 	.else
 	add	x21, sp, #S_FRAME_SIZE
-	.endif
+	get_thread_info tsk
+	/* Save the task's original addr_limit and set USER_DS (TASK_SIZE_64) */
+#ifdef CONFIG_THREAD_INFO_IN_TASK
+	ldr	x20, [tsk, #TSK_TI_ADDR_LIMIT]
+#else
+	ldr	x20, [tsk, #TI_ADDR_LIMIT]
+#endif
+	str	x20, [sp, #S_ORIG_ADDR_LIMIT]
+	mov	x20, #TASK_SIZE_64
+#ifdef CONFIG_THREAD_INFO_IN_TASK
+	str	x20, [tsk, #TSK_TI_ADDR_LIMIT]
+#else
+	str	x20, [tsk, #TI_ADDR_LIMIT]
+#endif
+	ALTERNATIVE(nop, SET_PSTATE_UAO(0), ARM64_HAS_UAO, CONFIG_ARM64_UAO)
+	.endif /* \el == 0 */
 	mrs	x22, elr_el1
 	mrs	x23, spsr_el1
 	stp	lr, x21, [sp, #S_LR]
@@ -79,6 +104,13 @@
 	.endif
 
 	/*
+	 * Set sp_el0 to current thread_info.
+	 */
+	.if	\el == 0
+	msr	sp_el0, tsk
+	.endif
+
+	/*
 	 * Registers that may be useful after this macro is invoked:
 	 *
 	 * x21 - aborted SP
@@ -87,54 +119,77 @@
 	*/
 	.endm
 
-	.macro	kernel_exit, el, ret = 0
+	.macro	kernel_exit, el
+	.if	\el != 0
+	/* Restore the task's original addr_limit. */
+	ldr	x20, [sp, #S_ORIG_ADDR_LIMIT]
+#ifdef CONFIG_THREAD_INFO_IN_TASK
+	str	x20, [tsk, #TSK_TI_ADDR_LIMIT]
+#else
+	str	x20, [tsk, #TI_ADDR_LIMIT]
+#endif
+
+	/* No need to restore UAO, it will be restored from SPSR_EL1 */
+	.endif
+
 	ldp	x21, x22, [sp, #S_PC]		// load ELR, SPSR
 	.if	\el == 0
+	ct_user_enter
+	.endif
+
 	ldr	x23, [sp, #S_SP]		// load return stack pointer
 	msr	sp_el0, x23
+	tst	x22, #PSR_MODE32_BIT		// native task?
+	b.eq	3f
+
 #ifdef CONFIG_ARM64_ERRATUM_845719
-	tbz x22, #4, 1f
+alternative_if ARM64_WORKAROUND_845719
 #ifdef CONFIG_PID_IN_CONTEXTIDR
 	mrs x29, contextidr_el1
 	msr contextidr_el1, x29
 #else
 	msr contextidr_el1, xzr
 #endif
+alternative_else_nop_endif
 #endif
+3:
 	.endif
-1:	.if	\ret
-	ldr	x1, [sp, #S_X1]			// preserve x0 (syscall return)
-	add	sp, sp, S_X2
-	.else
-	pop	x0, x1
-	.endif
-	pop	x2, x3				// load the rest of the registers
-	pop	x4, x5
-	pop	x6, x7
-	pop	x8, x9
+
 	msr	elr_el1, x21			// set up the return data
 	msr	spsr_el1, x22
-	.if	\el == 0
-	msr	sp_el0, x23
-	.endif
-	pop	x10, x11
-	pop	x12, x13
-	pop	x14, x15
-	pop	x16, x17
-	pop	x18, x19
-	pop	x20, x21
-	pop	x22, x23
-	pop	x24, x25
-	pop	x26, x27
-	pop	x28, x29
-	ldr	lr, [sp], #S_FRAME_SIZE - S_LR	// load LR and restore SP
-	eret					// return to kernel
-	.endm
+	ldp	x0, x1, [sp, #16 * 0]
+	ldp	x2, x3, [sp, #16 * 1]
+	ldp	x4, x5, [sp, #16 * 2]
+	ldp	x6, x7, [sp, #16 * 3]
+	ldp	x8, x9, [sp, #16 * 4]
+	ldp	x10, x11, [sp, #16 * 5]
+	ldp	x12, x13, [sp, #16 * 6]
+	ldp	x14, x15, [sp, #16 * 7]
+	ldp	x16, x17, [sp, #16 * 8]
+	ldp	x18, x19, [sp, #16 * 9]
+	ldp	x20, x21, [sp, #16 * 10]
+	ldp	x22, x23, [sp, #16 * 11]
+	ldp	x24, x25, [sp, #16 * 12]
+	ldp	x26, x27, [sp, #16 * 13]
+	ldp	x28, x29, [sp, #16 * 14]
+	ldr	lr, [sp, #S_LR]
+	add	sp, sp, #S_FRAME_SIZE		// restore sp
 
-	.macro	get_thread_info, rd
-	 mov	\rd, sp
-	 and	\rd, \rd, #~(THREAD_SIZE - 1)	// top of stack
-	 .endm
+	.if	\el == 0
+alternative_insn eret, nop, ARM64_UNMAP_KERNEL_AT_EL0
+#ifdef CONFIG_UNMAP_KERNEL_AT_EL0
+	bne	4f
+	msr	far_el1, x30
+	tramp_alias	x30, tramp_exit_native
+	br	x30
+4:
+	tramp_alias	x30, tramp_exit_compat
+	br	x30
+#endif
+	.else
+	eret
+	.endif
+	.endm
 
 /*
  * These are the registers used in the syscall handler, and allow us to
@@ -677,6 +732,124 @@ __sys_trace_return_skipped:
 	mov	x0, sp
 	bl	syscall_trace_exit
 	b	ret_to_user
+
+__ni_sys_trace:
+	mov	x0, sp
+	bl	do_ni_syscall
+	b	__sys_trace_return
+
+#ifdef CONFIG_UNMAP_KERNEL_AT_EL0
+/*
+ * Exception vectors trampoline.
+ */
+	.pushsection ".entry.tramp.text", "ax"
+
+	.macro tramp_map_kernel, tmp
+	mrs	\tmp, ttbr1_el1
+	sub	\tmp, \tmp, #(SWAPPER_DIR_SIZE + RESERVED_TTBR0_SIZE)
+	bic	\tmp, \tmp, #USER_ASID_FLAG
+	msr	ttbr1_el1, \tmp
+#ifdef CONFIG_ARCH_MSM8996
+	/* ASID already in \tmp[63:48] */
+	movk	\tmp, #:abs_g2_nc:(TRAMP_VALIAS >> 12)
+	movk	\tmp, #:abs_g1_nc:(TRAMP_VALIAS >> 12)
+	/* 2MB boundary containing the vectors, so we nobble the walk cache */
+	movk	\tmp, #:abs_g0_nc:((TRAMP_VALIAS & ~(SZ_2M - 1)) >> 12)
+	isb
+	tlbi	vae1, \tmp
+	dsb	nsh
+#endif /* CONFIG_ARCH_MSM8996 */
+	.endm
+
+	.macro tramp_unmap_kernel, tmp
+	mrs	\tmp, ttbr1_el1
+	add	\tmp, \tmp, #(SWAPPER_DIR_SIZE + RESERVED_TTBR0_SIZE)
+	orr	\tmp, \tmp, #USER_ASID_FLAG
+	msr	ttbr1_el1, \tmp
+	/*
+	 * We avoid running the post_ttbr_update_workaround here because the
+	 * user and kernel ASIDs don't have conflicting mappings, so any
+	 * "blessing" as described in:
+	 *
+	 *   http://lkml.kernel.org/r/56BB848A.6060603@caviumnetworks.com
+	 *
+	 * will not hurt correctness. Whilst this may partially defeat the
+	 * point of using split ASIDs in the first place, it avoids
+	 * the hit of invalidating the entire I-cache on every return to
+	 * userspace.
+	 */
+	.endm
+
+	.macro tramp_ventry, regsize = 64
+	.align	7
+1:
+	.if	\regsize == 64
+	msr	tpidrro_el0, x30	// Restored in kernel_ventry
+	.endif
+	bl	2f
+	b	.
+2:
+	tramp_map_kernel	x30
+#ifdef CONFIG_RANDOMIZE_BASE
+	adr	x30, tramp_vectors + PAGE_SIZE
+#ifndef CONFIG_ARCH_MSM8996
+	isb
+#endif
+	ldr	x30, [x30]
+#else
+	ldr	x30, =vectors
+#endif
+	prfm	plil1strm, [x30, #(1b - tramp_vectors)]
+	msr	vbar_el1, x30
+	add	x30, x30, #(1b - tramp_vectors)
+	isb
+	ret
+	.endm
+
+	.macro tramp_exit, regsize = 64
+	adr	x30, tramp_vectors
+	msr	vbar_el1, x30
+	tramp_unmap_kernel	x30
+	.if	\regsize == 64
+	mrs	x30, far_el1
+	.endif
+	eret
+	.endm
+
+	.align	11
+ENTRY(tramp_vectors)
+	.space	0x400
+
+	tramp_ventry
+	tramp_ventry
+	tramp_ventry
+	tramp_ventry
+
+	tramp_ventry	32
+	tramp_ventry	32
+	tramp_ventry	32
+	tramp_ventry	32
+END(tramp_vectors)
+
+ENTRY(tramp_exit_native)
+	tramp_exit
+END(tramp_exit_native)
+
+ENTRY(tramp_exit_compat)
+	tramp_exit	32
+END(tramp_exit_compat)
+
+	.ltorg
+	.popsection				// .entry.tramp.text
+#ifdef CONFIG_RANDOMIZE_BASE
+	.pushsection ".rodata", "a"
+	.align PAGE_SHIFT
+	.globl	__entry_tramp_data_start
+__entry_tramp_data_start:
+	.quad	vectors
+	.popsection				// .rodata
+#endif /* CONFIG_RANDOMIZE_BASE */
+#endif /* CONFIG_UNMAP_KERNEL_AT_EL0 */
 
 /*
  * Special system call wrappers.
