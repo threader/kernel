@@ -1,5 +1,5 @@
 /*
- * Based on arch/arm/include/asm/assembler.h
+ * Based on arch/arm/include/asm/assembler.h, arch/arm/mm/proc-macros.S
  *
  * Copyright (C) 1996-2000 Russell King
  * Copyright (C) 2012 ARM Ltd.
@@ -23,6 +23,8 @@
 #ifndef __ASM_ASSEMBLER_H
 #define __ASM_ASSEMBLER_H
 
+#include <asm/asm-offsets.h>
+#include <asm/pgtable-hwdef.h>
 #include <asm/ptrace.h>
 #include <asm/thread_info.h>
 
@@ -112,17 +114,31 @@
  * SMP data memory barrier
  */
 	.macro	smp_dmb, opt
-#ifdef CONFIG_SMP
 	dmb	\opt
-#endif
+	.endm
+
+/*
+ * NOP sequence
+ */
+	.macro	nops, num
+	.rept	\num
+	nop
+	.endr
+	.endm
+
+/*
+ * Emit an entry into the exception table
+ */
+	.macro		_asm_extable, from, to
+	.pushsection	__ex_table, "a"
+	.align		3
+	.long		(\from - .), (\to - .)
+	.popsection
 	.endm
 
 #define USER(l, x...)				\
 9999:	x;					\
-	.section __ex_table,"a";		\
-	.align	3;				\
-	.quad	9999b,l;			\
-	.previous
+	_asm_extable	9999b, l
 
 /*
  * Register aliases.
@@ -167,35 +183,98 @@ lr	.req	x30		// link register
 #endif
 	orr	\rd, \lbits, \hbits, lsl #32
 	.endm
+
 /*
- * tcr_compute_pa_size - set TCR.(I)PS to the highest supported
- * ID_AA64MMFR0_EL1.PARange value
- *
- *	tcr:		register with the TCR_ELx value to be updated
- *	pos:		IPS or PS bitfield position
- *	tmp{0,1}:	temporary registers
+ * Pseudo-ops for PC-relative adr/ldr/str <reg>, <symbol> where
+ * <symbol> is within the range +/- 4 GB of the PC.
  */
-	.macro	tcr_compute_pa_size, tcr, pos, tmp0, tmp1
-	mrs	\tmp0, SYS_ID_AA64MMFR0_EL1
-	// Narrow PARange to fit the PS field in TCR_ELx
-	ubfx	\tmp0, \tmp0, #ID_AA64MMFR0_PARANGE_SHIFT, #3
-	mov	\tmp1, #ID_AA64MMFR0_PARANGE_MAX
-	cmp	\tmp0, \tmp1
-	csel	\tmp0, \tmp1, \tmp0, hi
-	bfi	\tcr, \tmp0, \pos, #3
+	/*
+	 * @dst: destination register (64 bit wide)
+	 * @sym: name of the symbol
+	 * @tmp: optional scratch register to be used if <dst> == sp, which
+	 *       is not allowed in an adrp instruction
+	 */
+	.macro	adr_l, dst, sym, tmp=
+	.ifb	\tmp
+	adrp	\dst, \sym
+	add	\dst, \dst, :lo12:\sym
+	.else
+	adrp	\tmp, \sym
+	add	\dst, \tmp, :lo12:\sym
+	.endif
+	.endm
+
+	/*
+	 * @dst: destination register (32 or 64 bit wide)
+	 * @sym: name of the symbol
+	 * @tmp: optional 64-bit scratch register to be used if <dst> is a
+	 *       32-bit wide register, in which case it cannot be used to hold
+	 *       the address
+	 */
+	.macro	ldr_l, dst, sym, tmp=
+	.ifb	\tmp
+	adrp	\dst, \sym
+	ldr	\dst, [\dst, :lo12:\sym]
+	.else
+	adrp	\tmp, \sym
+	ldr	\dst, [\tmp, :lo12:\sym]
+	.endif
+	.endm
+
+	/*
+	 * @src: source register (32 or 64 bit wide)
+	 * @sym: name of the symbol
+	 * @tmp: mandatory 64-bit scratch register to calculate the address
+	 *       while <src> needs to be preserved.
+	 */
+	.macro	str_l, src, sym, tmp
+	adrp	\tmp, \sym
+	str	\src, [\tmp, :lo12:\sym]
 	.endm
 
 /*
- * Annotate a function as being unsuitable for kprobes.
+ * vma_vm_mm - get mm pointer from vma pointer (vma->vm_mm)
  */
-#ifdef CONFIG_KPROBES
-#define NOKPROBE(x)				\
-	.pushsection "_kprobe_blacklist", "aw";	\
-	.quad	x;				\
-	.popsection;
-#else
-#define NOKPROBE(x)
+	.macro	vma_vm_mm, rd, rn
+	ldr	\rd, [\rn, #VMA_VM_MM]
+	.endm
+
+/*
+ * mmid - get context id from mm pointer (mm->context.id)
+ */
+	.macro	mmid, rd, rn
+	ldr	\rd, [\rn, #MM_CONTEXT_ID]
+	.endm
+
+/*
+ * dcache_line_size - get the minimum D-cache line size from the CTR register.
+ */
+	.macro	dcache_line_size, reg, tmp
+	mrs	\tmp, ctr_el0			// read CTR
+	ubfm	\tmp, \tmp, #16, #19		// cache line size encoding
+	mov	\reg, #4			// bytes per word
+	lsl	\reg, \reg, \tmp		// actual cache line size
+	.endm
+
+/*
+ * icache_line_size - get the minimum I-cache line size from the CTR register.
+ */
+	.macro	icache_line_size, reg, tmp
+	mrs	\tmp, ctr_el0			// read CTR
+	and	\tmp, \tmp, #0xf		// cache line size encoding
+	mov	\reg, #4			// bytes per word
+	lsl	\reg, \reg, \tmp		// actual cache line size
+	.endm
+
+/*
+ * tcr_set_idmap_t0sz - update TCR.T0SZ so that we can load the ID map
+ */
+	.macro	tcr_set_idmap_t0sz, valreg, tmpreg
+#ifndef CONFIG_ARM64_VA_BITS_48
+	ldr_l	\tmpreg, idmap_t0sz
+	bfi	\valreg, \tmpreg, #TCR_T0SZ_OFFSET, #TCR_TxSZ_WIDTH
 #endif
+	.endm
 /*
  * Return the current thread_info.
  *
@@ -204,5 +283,113 @@ lr	.req	x30		// link register
  *\	.endm
 
 
+
+/*
+ * Macro to perform a data cache maintenance for the interval
+ * [kaddr, kaddr + size)
+ *
+ * 	op:		operation passed to dc instruction
+ * 	domain:		domain used in dsb instruciton
+ * 	kaddr:		starting virtual address of the region
+ * 	size:		size of the region
+ * 	Corrupts:	kaddr, size, tmp1, tmp2
+ */
+	.macro dcache_by_line_op op, domain, kaddr, size, tmp1, tmp2
+	dcache_line_size \tmp1, \tmp2
+	add	\size, \kaddr, \size
+	sub	\tmp2, \tmp1, #1
+	bic	\kaddr, \kaddr, \tmp2
+9998:
+	.if	(\op == cvau)
+/* alternative_if_not ARM64_WORKAROUND_CLEAN_CACHE
+ *	dc	\op, \kaddr
+ */
+	dc	civac, \kaddr
+	.elseif	(\op == cvap)
+/* alternative_if ARM64_HAS_DCPOP
+ *	sys 3, c7, c12, 1, \kaddr	// dc cvap
+ */
+/*alternative_else */
+	dc	cvac, \kaddr
+/* alternative_endif */
+	.else
+	dc	\op, \kaddr
+	.endif
+	add	\kaddr, \kaddr, \tmp1
+	cmp	\kaddr, \size
+	b.lo	9998b
+	dsb	\domain
+	.endm
+
+/*
+ * Macro to perform an instruction cache maintenance for the interval
+ * [start, end)
+ *
+ * 	start, end:	virtual addresses describing the region
+ *	label:		A label to branch to on user fault.
+ * 	Corrupts:	tmp1, tmp2
+ */
+	.macro invalidate_icache_by_line start, end, tmp1, tmp2, label
+	icache_line_size \tmp1, \tmp2
+	sub	\tmp2, \tmp1, #1
+	bic	\tmp2, \start, \tmp2
+9997:
+USER(\label, ic	ivau, \tmp2)			// invalidate I line PoU
+	add	\tmp2, \tmp2, \tmp1
+	cmp	\tmp2, \end
+	b.lo	9997b
+	dsb	ish
+	isb
+	.endm
+
+/*
+ * reset_pmuserenr_el0 - reset PMUSERENR_EL0 if PMUv3 present
+ */
+	.macro	reset_pmuserenr_el0, tmpreg
+	mrs	\tmpreg, id_aa64dfr0_el1	// Check ID_AA64DFR0_EL1 PMUVer
+	sbfx	\tmpreg, \tmpreg, #8, #4
+	cmp	\tmpreg, #1			// Skip if no PMU present
+	b.lt	9000f
+	msr	pmuserenr_el0, xzr		// Disable PMU access from EL0
+9000:
+	.endm
+
+/*
+ * Annotate a function as position independent, i.e., safe to be called before
+ * the kernel virtual mapping is activated.
+ */
+#define ENDPIPROC(x)			\
+	.globl	__pi_##x;		\
+	.type 	__pi_##x, %function;	\
+	.set	__pi_##x, x;		\
+	.size	__pi_##x, . - x;	\
+	ENDPROC(x)
+
+/*
+ * Return the current thread_info.
+ */
+	.macro	get_thread_info, rd
+	mrs	\rd, sp_el0
+	.endm
+
+	/*
+	 * mov_q - move an immediate constant into a 64-bit register using
+	 *         between 2 and 4 movz/movk instructions (depending on the
+	 *         magnitude and sign of the operand)
+	 */
+	.macro	mov_q, reg, val
+	.if (((\val) >> 31) == 0 || ((\val) >> 31) == 0x1ffffffff)
+	movz	\reg, :abs_g1_s:\val
+	.else
+	.if (((\val) >> 47) == 0 || ((\val) >> 47) == 0x1ffff)
+	movz	\reg, :abs_g2_s:\val
+	.else
+	movz	\reg, :abs_g3:\val
+	movk	\reg, :abs_g2_nc:\val
+	.endif
+	movk	\reg, :abs_g1_nc:\val
+	.endif
+	movk	\reg, :abs_g0_nc:\val
+	.endm
+
 #endif	/* __ASM_ASSEMBLER_H */
-#endif

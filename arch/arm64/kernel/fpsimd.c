@@ -17,8 +17,10 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <linux/cpu.h>
 #include <linux/cpu_pm.h>
 #include <linux/kernel.h>
+#include <linux/module.h>
 #include <linux/init.h>
 #include <linux/sched.h>
 #include <linux/signal.h>
@@ -26,6 +28,7 @@
 
 #include <asm/fpsimd.h>
 #include <asm/cputype.h>
+#include <asm/app_api.h>
 
 #define FPEXC_IOF	(1 << 0)
 #define FPEXC_DZF	(1 << 1)
@@ -34,6 +37,75 @@
 #define FPEXC_IXF	(1 << 4)
 #define FPEXC_IDF	(1 << 7)
 
+#define FP_SIMD_BIT	31
+
+/*
+ * In order to reduce the number of times the FPSIMD state is needlessly saved
+ * and restored, we need to keep track of two things:
+ * (a) for each task, we need to remember which CPU was the last one to have
+ *     the task's FPSIMD state loaded into its FPSIMD registers;
+ * (b) for each CPU, we need to remember which task's userland FPSIMD state has
+ *     been loaded into its FPSIMD registers most recently, or whether it has
+ *     been used to perform kernel mode NEON in the meantime.
+ *
+ * For (a), we add a 'cpu' field to struct fpsimd_state, which gets updated to
+ * the id of the current CPU everytime the state is loaded onto a CPU. For (b),
+ * we add the per-cpu variable 'fpsimd_last_state' (below), which contains the
+ * address of the userland FPSIMD state of the task that was loaded onto the CPU
+ * the most recently, or NULL if kernel mode NEON has been performed after that.
+ *
+ * With this in place, we no longer have to restore the next FPSIMD state right
+ * when switching between tasks. Instead, we can defer this check to userland
+ * resume, at which time we verify whether the CPU's fpsimd_last_state and the
+ * task's fpsimd_state.cpu are still mutually in sync. If this is the case, we
+ * can omit the FPSIMD restore.
+ *
+ * As an optimization, we use the thread_info flag TIF_FOREIGN_FPSTATE to
+ * indicate whether or not the userland FPSIMD state of the current task is
+ * present in the registers. The flag is set unless the FPSIMD registers of this
+ * CPU currently contain the most recent userland FPSIMD state of the current
+ * task.
+ *
+ * For a certain task, the sequence may look something like this:
+ * - the task gets scheduled in; if both the task's fpsimd_state.cpu field
+ *   contains the id of the current CPU, and the CPU's fpsimd_last_state per-cpu
+ *   variable points to the task's fpsimd_state, the TIF_FOREIGN_FPSTATE flag is
+ *   cleared, otherwise it is set;
+ *
+ * - the task returns to userland; if TIF_FOREIGN_FPSTATE is set, the task's
+ *   userland FPSIMD state is copied from memory to the registers, the task's
+ *   fpsimd_state.cpu field is set to the id of the current CPU, the current
+ *   CPU's fpsimd_last_state pointer is set to this task's fpsimd_state and the
+ *   TIF_FOREIGN_FPSTATE flag is cleared;
+ *
+ * - the task executes an ordinary syscall; upon return to userland, the
+ *   TIF_FOREIGN_FPSTATE flag will still be cleared, so no FPSIMD state is
+ *   restored;
+ *
+ * - the task executes a syscall which executes some NEON instructions; this is
+ *   preceded by a call to kernel_neon_begin(), which copies the task's FPSIMD
+ *   register contents to memory, clears the fpsimd_last_state per-cpu variable
+ *   and sets the TIF_FOREIGN_FPSTATE flag;
+ *
+ * - the task gets preempted after kernel_neon_end() is called; as we have not
+ *   returned from the 2nd syscall yet, TIF_FOREIGN_FPSTATE is still set so
+ *   whatever is in the FPSIMD registers is not saved to memory, but discarded.
+ */
+static DEFINE_PER_CPU(struct fpsimd_state *, fpsimd_last_state);
+static DEFINE_PER_CPU(int, fpsimd_stg_enable);
+
+static int fpsimd_settings = 0x1; /* default = 0x1 */
+module_param(fpsimd_settings, int, 0644);
+
+void fpsimd_settings_enable(void)
+{
+	set_app_setting_bit(FP_SIMD_BIT);
+}
+
+void fpsimd_settings_disable(void)
+{
+	clear_app_setting_bit(FP_SIMD_BIT);
+}
 
 /*
  * Trapped FP/ASIMD access.
@@ -43,7 +115,15 @@ void do_fpsimd_acc(unsigned int esr, struct pt_regs *regs)
 	/* TODO: implement lazy context saving/restoring */
 	WARN_ON(1);
 }
+void do_fpsimd_acc_compat(unsigned int esr, struct pt_regs *regs)
+{
+	if (!fpsimd_settings)
+		return;
 
+	fpsimd_disable_trap();
+	fpsimd_settings_enable();
+	this_cpu_write(fpsimd_stg_enable, 1);
+}
 /*
  * Raise a SIGFPE for the current process.
  */

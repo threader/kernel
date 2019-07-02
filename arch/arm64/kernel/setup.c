@@ -105,6 +105,10 @@ static struct resource mem_res[] = {
 #define kernel_code mem_res[0]
 #define kernel_data mem_res[1]
 
+/*
+ * The recorded values of x0 .. x3 upon kernel entry.
+ */
+u64 __cacheline_aligned boot_args[4];
 void __init early_print(const char *str, ...)
 {
 	char buf[256];
@@ -213,7 +217,7 @@ static void __init smp_build_mpidr_hash(void)
 	__flush_dcache_area(&mpidr_hash, sizeof(struct mpidr_hash));
 }
 #endif
-/*
+
 #ifdef CONFIG_HARDEN_BRANCH_PREDICTOR
 #include <asm/mmu_context.h>
 
@@ -242,7 +246,7 @@ void enable_psci_bp_hardening(void *data)
 				(bp_hardening_cb_t)psci_apply_bp_hardening);
 	}
 }
-#endif	*/ /* CONFIG_HARDEN_BRANCH_PREDICTOR */
+#endif	/* CONFIG_HARDEN_BRANCH_PREDICTOR */
 
 static void __init setup_processor(void)
 {
@@ -265,12 +269,12 @@ static void __init setup_processor(void)
 
 	sprintf(init_utsname()->machine, ELF_PLATFORM);
 	elf_hwcap = 0;
-/*
+
 #ifdef CONFIG_HARDEN_BRANCH_PREDICTOR
 	on_each_cpu(enable_psci_bp_hardening, NULL, true);
 	sys_psci_bp_hardening_initialised = true;
 #endif
-/
+
 	/*
 	 * Check for sane CTR_EL0.CWG value.
 	 */
@@ -506,7 +510,14 @@ void __init setup_arch(char **cmdline_p)
 	smp_init_cpus();
 	smp_build_mpidr_hash();
 #endif
-
+#ifdef CONFIG_ARM64_SW_TTBR0_PAN
+	/*
+	 * Make sure init_thread_info.ttbr0 always generates translation
+	 * faults in case uaccess_enable() is inadvertently called by the init
+	 * thread.
+	 */
+	init_thread_info.ttbr0 = virt_to_phys(empty_zero_page);
+#endif
 #ifdef CONFIG_VT
 #if defined(CONFIG_VGA_CONSOLE)
 	conswitchp = &vga_con;
