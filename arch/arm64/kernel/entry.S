@@ -333,6 +333,12 @@ alternative_insn eret, nop, ARM64_UNMAP_KERNEL_AT_EL0
 	.endif
 	.endm
 
+	/* .macro	get_thread_info, rd
+	* mov	\rd, sp
+	* and	\rd, \rd, #~(THREAD_SIZE - 1)	// top of stack
+	* .endm
+	*/
+
 /*
  * These are the registers used in the syscall handler, and allow us to
  * have in theory up to 7 arguments to a function - x0 to x6.
