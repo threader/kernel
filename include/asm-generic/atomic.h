@@ -42,7 +42,7 @@
  * Atomically reads the value of @v.
  */
 #ifndef atomic_read
-#define atomic_read(v)	(*(volatile int *)&(v)->counter)
+#define atomic_read(v)	ACCESS_ONCE((v)->counter)
 #endif
 
 /**
@@ -139,11 +139,11 @@ static inline void atomic_dec(atomic_t *v)
 
 static inline int __atomic_add_unless(atomic_t *v, int a, int u)
 {
-  int c, old;
-  c = atomic_read(v);
-  while (c != u && (old = atomic_cmpxchg(v, c, c + a)) != c)
-    c = old;
-  return c;
+	int c, old;
+	c = atomic_read(v);
+	while (c != u && (old = atomic_cmpxchg(v, c, c + a)) != c)
+		c = old;
+	return c;
 }
 
 /**

@@ -38,6 +38,11 @@
 
 #include "mm.h"
 
+u64 idmap_t0sz = TCR_T0SZ(VA_BITS);
+
+u64 kimage_voffset __ro_after_init;
+EXPORT_SYMBOL(kimage_voffset);
+
 /*
  * Empty_zero_page is a special page that is used for zero-initialized data
  * and COW.
@@ -614,6 +619,14 @@ void __init paging_init(void)
 	flush_tlb_all();
 	set_kernel_text_ro();
 	flush_tlb_all();
+
+	/*
+	 * We only reuse the PGD from the swapper_pg_dir, not the pud + pmd
+	 * allocated with it.
+	 */
+	memblock_free(__pa_symbol(swapper_pg_dir) + PAGE_SIZE,
+		      __pa_symbol(swapper_pg_end) - __pa_symbol(swapper_pg_dir)
+		      - PAGE_SIZE);
 }
 
 /*
