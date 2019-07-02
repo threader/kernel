@@ -98,12 +98,12 @@ static inline u64 __attribute_const__ read_cpuid_mpidr(void)
 
 static inline unsigned int __attribute_const__ read_cpuid_implementor(void)
 {
-	return MIDR_IMPLEMENTOR(read_cpuid_id());
+	return (read_cpuid_id() & 0xFF000000) >> 24;
 }
 
 static inline unsigned int __attribute_const__ read_cpuid_part_number(void)
 {
-	return MIDR_PARTNUM(read_cpuid_id());
+	return (read_cpuid_id() & 0xFFF0);
 }
 
 static inline u32 __attribute_const__ read_cpuid_cachetype(void)

@@ -181,6 +181,5 @@ static inline void spin_lock_prefetch(const void *x)
 
 #endif
 
-
 #endif /* __ASSEMBLY__ */
 #endif /* __ASM_PROCESSOR_H */
