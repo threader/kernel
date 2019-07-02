@@ -17,7 +17,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <linux/cache.h>
 #include <linux/compat.h>
 #include <linux/errno.h>
 #include <linux/signal.h>
@@ -132,7 +131,7 @@ asmlinkage long sys_rt_sigreturn(struct pt_regs *regs)
 	struct rt_sigframe __user *frame;
 
 	/* Always make any pending restarted system calls return -EINTR */
-	current->restart_block.fn = do_no_restart_syscall;
+	current_thread_info()->restart_block.fn = do_no_restart_syscall;
 
 	/*
 	 * Since we stacked the signal on a 128-bit boundary, then 'sp' should
@@ -420,8 +419,6 @@ static void do_signal(struct pt_regs *regs)
 
 	restore_saved_sigmask();
 }
-
-unsigned long __ro_after_init signal_minsigstksz;
 
 asmlinkage void do_notify_resume(struct pt_regs *regs,
 				 unsigned int thread_flags)

@@ -1,4 +1,3 @@
-
 /*
     hwmon.h - part of lm_sensors, Linux kernel modules for hardware monitoring
 
@@ -14,8 +13,6 @@
 
 #ifndef _HWMON_H_
 #define _HWMON_H_
-
-#include <linux/bitops.h>
 
 struct device;
 

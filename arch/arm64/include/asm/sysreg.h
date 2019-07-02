@@ -239,16 +239,6 @@ static inline void config_sctlr_el1(u32 clear, u32 set)
 		     : : "r" (__val));				\
 } while (0)
 
-/*
- * For registers without architectural names, or simply unsupported by
- * GAS.
- */
-#define read_sysreg_s(r) ({						\
-	u64 __val;							\
-	asm volatile("mrs_s %0, " __stringify(r) : "=r" (__val));	\
-	__val;								\
-})
-
 #endif
 
 #endif	/* __ASM_SYSREG_H */
