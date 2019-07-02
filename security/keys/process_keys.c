@@ -76,7 +76,9 @@ int install_user_keyrings(void)
 		if (IS_ERR(uid_keyring)) {
 			uid_keyring = keyring_alloc(buf, user->uid, INVALID_GID,
 						    cred, user_keyring_perm,
-						    KEY_ALLOC_IN_QUOTA, NULL);
+						    KEY_ALLOC_UID_KEYRING |
+							KEY_ALLOC_IN_QUOTA,
+						    NULL);
 			if (IS_ERR(uid_keyring)) {
 				ret = PTR_ERR(uid_keyring);
 				goto error;
@@ -92,7 +94,9 @@ int install_user_keyrings(void)
 			session_keyring =
 				keyring_alloc(buf, user->uid, INVALID_GID,
 					      cred, user_keyring_perm,
-					      KEY_ALLOC_IN_QUOTA, NULL);
+					      KEY_ALLOC_UID_KEYRING |
+						  KEY_ALLOC_IN_QUOTA,
+					      NULL);
 			if (IS_ERR(session_keyring)) {
 				ret = PTR_ERR(session_keyring);
 				goto error_release;
@@ -125,8 +129,10 @@ error:
 }
 
 /*
- * Install a fresh thread keyring directly to new credentials.  This keyring is
- * allowed to overrun the quota.
+ * Install a thread keyring to the given credentials struct if it didn't have
+ * one already.  This is allowed to overrun the quota.
+ *
+ * Return: 0 if a thread keyring is now present; -errno on failure.
  */
 int install_thread_keyring_to_cred(struct cred *new)
 {
@@ -146,7 +152,9 @@ int install_thread_keyring_to_cred(struct cred *new)
 }
 
 /*
- * Install a fresh thread keyring, discarding the old one.
+ * Install a thread keyring to the current task if it didn't have one already.
+ *
+ * Return: 0 if a thread keyring is now present; -errno on failure.
  */
 static int install_thread_keyring(void)
 {
@@ -156,8 +164,6 @@ static int install_thread_keyring(void)
 	new = prepare_creds();
 	if (!new)
 		return -ENOMEM;
-
-	BUG_ON(new->thread_keyring);
 
 	ret = install_thread_keyring_to_cred(new);
 	if (ret < 0) {
@@ -169,10 +175,10 @@ static int install_thread_keyring(void)
 }
 
 /*
- * Install a process keyring directly to a credentials struct.
+ * Install a process keyring to the given credentials struct if it didn't have
+ * one already.  This is allowed to overrun the quota.
  *
- * Returns -EEXIST if there was already a process keyring, 0 if one installed,
- * and other value on any other error
+ * Return: 0 if a process keyring is now present; -errno on failure.
  */
 int install_process_keyring_to_cred(struct cred *new)
 {
