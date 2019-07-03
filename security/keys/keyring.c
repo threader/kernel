@@ -591,7 +591,7 @@ found:
  * Returns a pointer to the keyring with the keyring's refcount having being
  * incremented on success.  -ENOKEY is returned if a key could not be found.
  */
-struct key *find_keyring_by_name(const char *name, bool skip_perm_check)
+struct key *find_keyring_by_name(const char *name, bool uid_keyring)
 {
 	struct key *keyring;
 	int bucket;
@@ -619,10 +619,15 @@ struct key *find_keyring_by_name(const char *name, bool skip_perm_check)
 			if (strcmp(keyring->description, name) != 0)
 				continue;
 
-			if (!skip_perm_check &&
-			    key_permission(make_key_ref(keyring, 0),
-					   KEY_SEARCH) < 0)
-				continue;
+			if (uid_keyring) {
+				if (!test_bit(KEY_FLAG_UID_KEYRING,
+					      &keyring->flags))
+					continue;
+			} else {
+				if (key_permission(make_key_ref(keyring, 0),
+						   KEY_SEARCH) < 0)
+					continue;
+			}
 
 			/* we've got a match but we might end up racing with
 			 * key_cleanup() if the keyring is currently 'dead'
