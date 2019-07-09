@@ -28,6 +28,7 @@
 #include <asm/asm-offsets.h>
 #include <asm/cache.h>
 #include <asm/cputype.h>
+#include <asm/kernel-pgtable.h>
 #include <asm/memory.h>
 #include <asm/thread_info.h>
 #include <asm/pgtable-hwdef.h>
@@ -45,7 +46,15 @@
 #if (KERNEL_RAM_VADDR & 0xfffff) != 0x80000
 #error KERNEL_RAM_VADDR must start at 0xXXX80000
 #endif
-
+/*
+ * The idmap and swapper page tables need some space reserved in the kernel
+ * image. Both require pgd, pud (4 levels only) and pmd tables to (section)
+ * map the kernel. With the 64K page configuration, swapper and idmap need to
+ * map to pte level. The swapper also maps the FDT (see __create_page_tables
+ * for more information). Note that the number of ID map translation levels
+ * could be increased on the fly if system RAM is out of reach for the default
+ * VA range, so 3 pages are reserved in all cases.
+ */
 #define SWAPPER_DIR_SIZE	(3 * PAGE_SIZE)
 #define IDMAP_DIR_SIZE		(2 * PAGE_SIZE)
 
