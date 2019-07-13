@@ -181,10 +181,10 @@ static inline phys_addr_t __virt_to_phys(unsigned long x)
 	phys_addr_t t;
 
 	if (sizeof(phys_addr_t) == 4) {
-		__pv_stub((unsigned long) x, t, "add", __PV_BITS_31_24);
+		__pv_stub(x, t, "add", __PV_BITS_31_24);
 	} else {
 		__pv_stub_mov_hi(t);
-		__pv_add_carry_stub((unsigned long) x, t);
+		__pv_add_carry_stub(x, t);
 	}
 	return t;
 }
@@ -199,7 +199,7 @@ static inline unsigned long __virt_to_phys(unsigned long x)
 static inline unsigned long __phys_to_virt(unsigned long x)
 {
 	unsigned long t;
-	__pv_stub((unsigned long) x, t, "sub", __PV_BITS_31_24);
+	__pv_stub(x, t, "sub", __PV_BITS_31_24);
 	return t;
 }
 #else
@@ -210,12 +210,13 @@ static inline unsigned long __phys_to_virt(unsigned long x)
 #define __phys_to_virt(x)	((x) - PHYS_OFFSET + PAGE_OFFSET)
 
 #endif
-#endif
-
 static inline phys_addr_t __virt_to_phys(unsigned long x)
 {
 	return (phys_addr_t)x - PAGE_OFFSET + PHYS_OFFSET;
 }
+#endif
+
+
 /*
  * PFNs are used to describe any physical page; this means
  * PFN 0 == physical address 0.
