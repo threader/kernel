@@ -22,8 +22,9 @@
 #define __ASM_OUTERCACHE_H
 
 #include <linux/types.h>
-#include <asm/memory.h>
-
+#ifndef phys_addr_t
+typedef u32 phys_addr_t;
+#endif 
 struct outer_cache_fns {
 	void (*inv_range)(unsigned long, unsigned long);
 	void (*clean_range)(unsigned long, unsigned long);
