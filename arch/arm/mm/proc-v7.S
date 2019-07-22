@@ -87,6 +87,12 @@ ENTRY(cpu_v7_dcache_clean_area)
 	ret	lr
 ENDPROC(cpu_v7_dcache_clean_area)
 
+ENTRY(cpu_v7_bpiall_switch_mm)
+	mov	r3, #0
+	mcr	p15, 0, r3, c7, c5, 6		@ flush BTAC/BTB
+	b	cpu_v7_switch_mm
+ENDPROC(cpu_v7_bpiall_switch_mm)
+
 	string	cpu_v7_name, "ARMv7 Processor"
 	.align
 
@@ -146,6 +152,30 @@ ENTRY(cpu_v7_do_resume)
 	mov	r0, r8			@ control register
 	b	cpu_resume_mmu
 ENDPROC(cpu_v7_do_resume)
+#endif
+
+.globl	cpu_ca9mp_suspend_size
+.equ	cpu_ca9mp_suspend_size, cpu_v7_suspend_size + 4 * 2
+#ifdef CONFIG_ARM_CPU_SUSPEND
+ENTRY(cpu_ca9mp_do_suspend)
+	stmfd	sp!, {r4 - r5}
+	mrc	p15, 0, r4, c15, c0, 1		@ Diagnostic register
+	mrc	p15, 0, r5, c15, c0, 0		@ Power register
+	stmia	r0!, {r4 - r5}
+	ldmfd	sp!, {r4 - r5}
+	b	cpu_v7_do_suspend
+ENDPROC(cpu_ca9mp_do_suspend)
+
+ENTRY(cpu_ca9mp_do_resume)
+	ldmia	r0!, {r4 - r5}
+	mrc	p15, 0, r10, c15, c0, 1		@ Read Diagnostic register
+	teq	r4, r10				@ Already restored?
+	mcrne	p15, 0, r4, c15, c0, 1		@ No, so restore it
+	mrc	p15, 0, r10, c15, c0, 0		@ Read Power register
+	teq	r5, r10				@ Already restored?
+	mcrne	p15, 0, r5, c15, c0, 0		@ No, so restore it
+	b	cpu_v7_do_resume
+ENDPROC(cpu_ca9mp_do_resume)
 #endif
 
 #ifdef CONFIG_CPU_PJ4B
