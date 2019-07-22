@@ -20,6 +20,7 @@
 #define PAGE_SIZE getpagesize()
 #define PAGE_MASK (~(PAGE_SIZE-1))
 
+typedef unsigned long long phys_addr_t;
 typedef unsigned long long dma_addr_t;
 typedef size_t __kernel_size_t;
 
