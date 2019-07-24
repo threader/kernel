@@ -1,0 +1,30 @@
+--- drivers/usb/core/hub.c
++++ drivers/usb/core/hub.c
+@@ -2973,7 +3048,6 @@ int usb_port_suspend(struct usb_device *udev, pm_message_t msg)
+ {
+ 	struct usb_hub	*hub = usb_hub_to_struct_hub(udev->parent);
+ 	struct usb_port *port_dev = hub->ports[udev->portnum - 1];
+-	enum pm_qos_flags_status pm_qos_stat;
+ 	int		port1 = udev->portnum;
+ 	int		status;
+ 	bool		really_suspend = true;
+@@ -4741,9 +4873,10 @@ static void hub_events(void)
+ 
+ 		hub = list_entry(tmp, struct usb_hub, event_list);
+ 		kref_get(&hub->kref);
++		hdev = hub->hdev;
++		usb_get_dev(hdev);
+ 		spin_unlock_irq(&hub_event_lock);
+ 
+-		hdev = hub->hdev;
+ 		hub_dev = hub->intfdev;
+ 		intf = to_usb_interface(hub_dev);
+ 		dev_dbg(hub_dev, "state %d ports %d chg %04x evt %04x\n",
+@@ -4958,6 +5093,7 @@ static void hub_events(void)
+ 		usb_autopm_put_interface(intf);
+  loop_disconnected:
+ 		usb_unlock_device(hdev);
++		usb_put_dev(hdev);
+ 		kref_put(&hub->kref, hub_release);
+ 
+         } /* end while (1) */

@@ -505,7 +505,6 @@ el0_dbg:
 	 */
 	tbnz	x24, #0, el0_inv		// EL0 only
 	mrs	x0, far_el1
-	mov	x1, x25
 	mov	x2, sp
 	bl	do_debug_exception
 	enable_dbg
@@ -515,7 +514,7 @@ el0_inv:
 	mov	x0, sp
 	mov	x1, #BAD_SYNC
 	mrs	x2, esr_el1
-	b	bad_mode
+	b	bad_el0_sync
 ENDPROC(el0_sync)
 
 	.align	6

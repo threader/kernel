@@ -409,7 +409,13 @@ extern bool sys_psci_bp_hardening_initialised;
 extern void enable_psci_bp_hardening(void *data);
 #endif
 */
-#endif /* __ASSEMBLY__ */
 
+static inline bool system_uses_ttbr0_pan(void)
+{
+	return IS_ENABLED(CONFIG_ARM64_SW_TTBR0_PAN) &&
+		!cpus_have_cap(ARM64_HAS_PAN);
+}
+
+#endif /* __ASSEMBLY__ */
 
 #endif

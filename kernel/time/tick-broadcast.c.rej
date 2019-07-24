@@ -1,0 +1,112 @@
+--- kernel/time/tick-broadcast.c
++++ kernel/time/tick-broadcast.c
+@@ -66,17 +68,34 @@ static void tick_broadcast_start_periodic(struct clock_event_device *bc)
+ /*
+  * Check, if the device can be utilized as broadcast device:
+  */
+-int tick_check_broadcast_device(struct clock_event_device *dev)
++static bool tick_check_broadcast_device(struct clock_event_device *curdev,
++					struct clock_event_device *newdev)
++{
++	if ((newdev->features & CLOCK_EVT_FEAT_DUMMY) ||
++	    (newdev->features & CLOCK_EVT_FEAT_C3STOP))
++		return false;
++
++	if (tick_broadcast_device.mode == TICKDEV_MODE_ONESHOT &&
++	    !(newdev->features & CLOCK_EVT_FEAT_ONESHOT))
++		return false;
++
++	return !curdev || newdev->rating > curdev->rating;
++}
++
++/*
++ * Conditionally install/replace broadcast device
++ */
++void tick_install_broadcast_device(struct clock_event_device *dev)
+ {
+ 	struct clock_event_device *cur = tick_broadcast_device.evtdev;
+ 
+-	if ((dev->features & CLOCK_EVT_FEAT_DUMMY) ||
+-	    (tick_broadcast_device.evtdev &&
+-	     tick_broadcast_device.evtdev->rating >= dev->rating) ||
+-	     (dev->features & CLOCK_EVT_FEAT_C3STOP))
+-		return 0;
++	if (!tick_check_broadcast_device(cur, dev))
++		return;
+ 
+-	clockevents_exchange_device(tick_broadcast_device.evtdev, dev);
++	if (!try_module_get(dev->owner))
++		return;
++
++	clockevents_exchange_device(cur, dev);
+ 	if (cur)
+ 		cur->event_handler = clockevents_handle_noop;
+ 	tick_broadcast_device.evtdev = dev;
+@@ -140,20 +159,59 @@ int tick_device_uses_broadcast(struct clock_event_device *dev, int cpu)
+ 		dev->event_handler = tick_handle_periodic;
+ 		tick_device_setup_broadcast_func(dev);
+ 		cpumask_set_cpu(cpu, tick_broadcast_mask);
+-		tick_broadcast_start_periodic(tick_broadcast_device.evtdev);
++		tick_broadcast_start_periodic(bc);
+ 		ret = 1;
+ 	} else {
+ 		/*
+-		 * When the new device is not affected by the stop
+-		 * feature and the cpu is marked in the broadcast mask
+-		 * then clear the broadcast bit.
++		 * Clear the broadcast bit for this cpu if the
++		 * device is not power state affected.
+ 		 */
+-		if (!(dev->features & CLOCK_EVT_FEAT_C3STOP)) {
+-			int cpu = smp_processor_id();
++		if (!(dev->features & CLOCK_EVT_FEAT_C3STOP))
+ 			cpumask_clear_cpu(cpu, tick_broadcast_mask);
+-			tick_broadcast_clear_oneshot(cpu);
+-		} else {
++		else
+ 			tick_device_setup_broadcast_func(dev);
++
++		/*
++		 * Clear the broadcast bit if the CPU is not in
++		 * periodic broadcast on state.
++		 */
++		if (!cpumask_test_cpu(cpu, tick_broadcast_on))
++			cpumask_clear_cpu(cpu, tick_broadcast_mask);
++
++		switch (tick_broadcast_device.mode) {
++		case TICKDEV_MODE_ONESHOT:
++			/*
++			 * If the system is in oneshot mode we can
++			 * unconditionally clear the oneshot mask bit,
++			 * because the CPU is running and therefore
++			 * not in an idle state which causes the power
++			 * state affected device to stop. Let the
++			 * caller initialize the device.
++			 */
++			tick_broadcast_clear_oneshot(cpu);
++			ret = 0;
++			break;
++
++		case TICKDEV_MODE_PERIODIC:
++			/*
++			 * If the system is in periodic mode, check
++			 * whether the broadcast device can be
++			 * switched off now.
++			 */
++			if (cpumask_empty(tick_broadcast_mask) && bc)
++				clockevents_shutdown(bc);
++			/*
++			 * If we kept the cpu in the broadcast mask,
++			 * tell the caller to leave the per cpu device
++			 * in shutdown state. The periodic interrupt
++			 * is delivered by the broadcast device.
++			 */
++			ret = cpumask_test_cpu(cpu, tick_broadcast_mask);
++			break;
++		default:
++			/* Nothing to do */
++			ret = 0;
++			break;
+ 		}
+ 	}
+ 	raw_spin_unlock_irqrestore(&tick_broadcast_lock, flags);

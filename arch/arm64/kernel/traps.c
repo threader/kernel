@@ -562,7 +562,7 @@ asmlinkage void bad_el0_sync(struct pt_regs *regs, int reason, unsigned int esr)
 		arm64_check_cache_ecc(NULL);
 	}
 
-	arm64_notify_die("Oops - bad mode", regs, &info, 0);
+	force_sig_info(info.si_signo, &info, current);
 }
 void __noreturn arm64_serror_panic(struct pt_regs *regs, u32 esr)
 {

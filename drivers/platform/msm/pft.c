@@ -217,12 +217,14 @@ static int __init pft_lsm_init(struct pft_device *dev)
 		ret = register_security(&pft_security_ops);
 		if (ret) {
 			pr_err("pft lsm registeration failed, ret=%d.\n", ret);
-			return 0;
+			return ret;
 		}
+
 		dev->is_chosen_lsm = true;
 		pr_debug("pft is the chosen lsm, registered sucessfully !\n");
 	} else {
-		pr_debug("pft is not the chosen lsm.\n");
+		pr_err("pft is not the chosen lsm.\n");
+		return -ENODEV;
 	}
 
 	return 0;

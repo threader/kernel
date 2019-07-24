@@ -1,0 +1,11 @@
+--- kernel/time/tick-internal.h
++++ kernel/time/tick-internal.h
+@@ -18,6 +18,8 @@ extern int tick_do_timer_cpu __read_mostly;
+ 
+ extern void tick_setup_periodic(struct clock_event_device *dev, int broadcast);
+ extern void tick_handle_periodic(struct clock_event_device *dev);
++extern void tick_notify(unsigned long reason, void *dev);
++extern void tick_check_new_device(struct clock_event_device *dev);
+ 
+ extern void clockevents_shutdown(struct clock_event_device *dev);
+ 

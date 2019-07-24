@@ -1230,10 +1230,8 @@ __do_replace(struct net *net, const char *name, unsigned int valid_hooks,
 
 	xt_free_table_info(oldinfo);
 	if (copy_to_user(counters_ptr, counters,
-			 sizeof(struct xt_counters) * num_counters) != 0) {
-		/* Silent error, can't fail, new table is already in place */
-		net_warn_ratelimited("iptables: counters copy to user failed while replacing table\n");
-	}
+			 sizeof(struct xt_counters) * num_counters) != 0)
+		ret = -EFAULT;
 	vfree(counters);
 	xt_table_unlock(t);
 	return ret;
@@ -1591,6 +1589,7 @@ compat_copy_entry_from_user(struct compat_ipt_entry *e, void **dstptr,
 	xt_compat_target_from_user(t, dstptr, size);
 
 	de->next_offset = e->next_offset - (origsize - *size);
+
 	for (h = 0; h < NF_INET_NUMHOOKS; h++) {
 		if ((unsigned char *)de - base < newinfo->hook_entry[h])
 			newinfo->hook_entry[h] -= origsize - *size;

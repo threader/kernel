@@ -1,0 +1,10 @@
+--- lib/vsprintf.c
++++ lib/vsprintf.c
+@@ -26,6 +26,7 @@
+ #include <linux/math64.h>
+ #include <linux/uaccess.h>
+ #include <linux/ioport.h>
++#include <linux/cred.h>
+ #include <net/addrconf.h>
+ 
+ #include <asm/page.h>		/* for PAGE_SIZE */

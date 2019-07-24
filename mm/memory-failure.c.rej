@@ -1,0 +1,23 @@
+--- mm/memory-failure.c
++++ mm/memory-failure.c
+@@ -968,19 +986,13 @@ static int hwpoison_user_mappings(struct page *p, unsigned long pfn,
+ 	 * there's nothing that can be done.
+ 	 */
+ 	if (kill)
+-		collect_procs(ppage, &tokill);
+-
+-	if (hpage != ppage)
+-		lock_page(ppage);
++		collect_procs(ppage, &tokill, flags & MF_ACTION_REQUIRED);
+ 
+ 	ret = try_to_unmap(ppage, ttu);
+ 	if (ret != SWAP_SUCCESS)
+ 		printk(KERN_ERR "MCE %#lx: failed to unmap page (mapcount=%d)\n",
+ 				pfn, page_mapcount(ppage));
+ 
+-	if (hpage != ppage)
+-		unlock_page(ppage);
+-
+ 	/*
+ 	 * Now that the dirty bit has been propagated to the
+ 	 * struct page and all unmaps done we can decide if
