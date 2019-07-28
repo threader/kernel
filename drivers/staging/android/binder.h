@@ -1,5 +1,10 @@
 /*
- * Copyright (C) 2010 Google, Inc.
+ * Copyright (C) 2008 Google, Inc.
+ *
+ * Based on, but no longer compatible with, the original
+ * OpenBinder.org binder driver interface, which is:
+ *
+ * Copyright (c) 2005 Palmsource, Inc.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -12,11 +17,14 @@
  *
  */
 
-#ifndef _INCLUDE_LINUX_PLATFORM_DATA_RAM_CONSOLE_H_
-#define _INCLUDE_LINUX_PLATFORM_DATA_RAM_CONSOLE_H_
+#ifndef _LINUX_BINDER_H
+#define _LINUX_BINDER_H
 
-struct ram_console_platform_data {
-	const char *bootinfo;
-};
+#ifdef CONFIG_ANDROID_BINDER_IPC_32BIT
+#define BINDER_IPC_32BIT 1
+#endif
 
-#endif /* _INCLUDE_LINUX_PLATFORM_DATA_RAM_CONSOLE_H_ */
+#include "uapi/binder.h"
+
+#endif /* _LINUX_BINDER_H */
+

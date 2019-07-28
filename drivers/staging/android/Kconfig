@@ -2,11 +2,57 @@ menu "Android"
 
 config ANDROID
 	bool "Android Drivers"
-	default N
 	---help---
 	  Enable support for various drivers needed on the Android platform
 
 if ANDROID
+
+config ANDROID_BINDER_IPC
+	bool "Android Binder IPC Driver"
+	depends on MMU
+	default n
+	---help---
+	  Binder is used in Android for both communication between processes,
+	  and remote method invocation.
+
+	  This means one Android process can call a method/routine in another
+	  Android process, using Binder to identify, invoke and pass arguments
+	  between said processes.
+
+config ANDROID_BINDER_IPC_32BIT
+	bool
+	depends on !64BIT && ANDROID_BINDER_IPC
+	default y
+	---help---
+	  The Binder API has been changed to support both 32 and 64bit
+	  applications in a mixed environment.
+
+	  Enable this to support an old 32-bit Android user-space (v4.4 and
+	  earlier).
+
+	  Note that enabling this will break newer Android user-space.
+
+config ANDROID_BINDER_DEVICES
+	string "Android Binder devices"
+	depends on ANDROID_BINDER_IPC
+	default "binder,hwbinder,vndbinder"
+	---help---
+	  Default value for the binder.devices parameter.
+
+	  The binder.devices parameter is a comma-separated list of strings
+	  that specifies the names of the binder device nodes that will be
+	  created. Each binder device has its own context manager, and is
+	  therefore logically separated from the other devices.
+
+config ANDROID_BINDER_IPC_SELFTEST
+        bool "Android Binder IPC Driver Selftest"
+        depends on ANDROID_BINDER_IPC
+        ---help---
+          This feature allows binder selftest to run.
+
+          Binder selftest checks the allocation and free of binder buffers
+          exhaustively with combinations of various buffer sizes and
+          alignments.
 
 config ASHMEM
 	bool "Enable the Anonymous Shared Memory Subsystem"
@@ -20,6 +66,23 @@ config ASHMEM
 	  It is, in theory, a good memory allocator for low-memory devices,
 	  because it can discard shared memory units when under memory pressure.
 
+config ANDROID_LOGGER
+	tristate "Android log driver"
+	default n
+	---help---
+	  This adds support for system-wide logging using four log buffers.
+
+	  These are:
+
+	      1: main
+	      2: events
+	      3: radio
+	      4: system
+
+	  Log reading and writing is performed via normal Linux reads and
+	  optimized writes. This optimization avoids logging having too
+	  much overhead in the system.
+
 config ANDROID_TIMED_OUTPUT
 	bool "Timed output class driver"
 	default y
@@ -31,7 +94,6 @@ config ANDROID_TIMED_GPIO
 
 config ANDROID_LOW_MEMORY_KILLER
 	bool "Android Low Memory Killer"
-	default N
 	---help---
 	  Registers processes to be killed when memory is low
 
@@ -48,7 +110,7 @@ config SYNC
 	bool "Synchronization framework"
 	default n
 	select ANON_INODES
-	help
+	---help---
 	  This option enables the framework for synchronization between multiple
 	  drivers.  Sync implementations can take advantage of hardware
 	  synchronization built into devices like GPUs.
@@ -57,7 +119,7 @@ config SW_SYNC
 	bool "Software synchronization objects"
 	default n
 	depends on SYNC
-	help
+	---help---
 	  A sync object driver that uses a 32bit counter to coordinate
 	  syncrhronization.  Useful when there is no hardware primitive backing
 	  the synchronization.
@@ -66,7 +128,7 @@ config SW_SYNC_USER
 	bool "Userspace API for SW_SYNC"
 	default n
 	depends on SW_SYNC
-	help
+	---help---
 	  Provides a user space API to the sw sync object.
 	  *WARNING* improper use of this can result in deadlocking kernel
 	  drivers from userspace.
@@ -85,6 +147,15 @@ config ONESHOT_SYNC_USER
 	depends on SYNC
 	help
 	  Provide a userspace API for creating oneshot sync objects.
+
+config ANDROID_VSOC
+	tristate "Android Virtual SoC support"
+	default n
+	depends on PCI_MSI
+	---help---
+	  This option adds support for the Virtual SoC driver needed to boot
+	  a 'cuttlefish' Android image inside QEmu. The driver interacts with
+	  a QEmu ivshmem device. If built as a module, it will be called vsoc.
 
 source "drivers/staging/android/ion/Kconfig"
 

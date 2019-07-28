@@ -7,7 +7,7 @@ enum msm_ion_heap_types {
 	ION_HEAP_TYPE_MSM_START = ION_HEAP_TYPE_CUSTOM + 1,
 	ION_HEAP_TYPE_SECURE_DMA = ION_HEAP_TYPE_MSM_START,
 	ION_HEAP_TYPE_SYSTEM_SECURE,
-	ION_HEAP_TYPE_REMOVED,
+	ION_HEAP_TYPE_HYP_CMA,
 	/*
 	 * if you add a heap type here you should also add it to
 	 * heap_types_info[] in msm_ion.c
@@ -27,6 +27,7 @@ enum ion_heap_ids {
 	INVALID_HEAP_ID = -1,
 	ION_CP_MM_HEAP_ID = 8,
 	ION_SECURE_HEAP_ID = 9,
+	ION_SECURE_DISPLAY_HEAP_ID = 10,
 	ION_CP_MFC_HEAP_ID = 12,
 	ION_CP_WB_HEAP_ID = 16, /* 8660 only */
 	ION_CAMERA_HEAP_ID = 20, /* 8660 only */
@@ -106,6 +107,9 @@ enum cp_mem_usage {
  */
 #define ION_FLAG_POOL_FORCE_ALLOC (1 << 16)
 
+
+#define ION_FLAG_POOL_PREFETCH (1 << 27)
+
 /**
 * Deprecated! Please use the corresponding ION_FLAG_*
 */
@@ -133,6 +137,7 @@ enum cp_mem_usage {
 #define ION_PIL2_HEAP_NAME  "pil_2"
 #define ION_QSECOM_HEAP_NAME	"qsecom"
 #define ION_SECURE_HEAP_NAME	"secure_heap"
+#define ION_SECURE_DISPLAY_HEAP_NAME "secure_display"
 
 #define ION_SET_CACHED(__cache)		(__cache | ION_FLAG_CACHED)
 #define ION_SET_UNCACHED(__cache)	(__cache & ~ION_FLAG_CACHED)
@@ -159,10 +164,18 @@ struct ion_flush_data {
 	unsigned int length;
 };
 
+struct ion_prefetch_regions {
+	unsigned int vmid;
+	size_t __user *sizes;
+	unsigned int nr_sizes;
+};
 
 struct ion_prefetch_data {
 	int heap_id;
 	unsigned long len;
+	/* Is unsigned long bad? 32bit compiler vs 64 bit compiler*/
+	struct ion_prefetch_regions __user *regions;
+	unsigned int nr_regions;
 };
 
 #define ION_IOC_MSM_MAGIC 'M'

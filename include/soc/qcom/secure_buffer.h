@@ -42,6 +42,7 @@ enum vmid {
 
 #define PERM_READ                       0x4
 #define PERM_WRITE                      0x2
+#define PERM_EXEC			0x1
 
 static inline int msm_secure_table(struct sg_table *table)
 {
@@ -51,18 +52,18 @@ static inline int msm_unsecure_table(struct sg_table *table)
 {
 	return -EINVAL;
 }
-int hyp_assign_table(struct sg_table *table,
+static inline int hyp_assign_table(struct sg_table *table,
 			u32 *source_vm_list, int source_nelems,
 			int *dest_vmids, int *dest_perms,
 			int dest_nelems)
 {
-	return -EINVAL;
+	return -ENOSYS;
 }
-int hyp_assign_phys(phys_addr_t addr, u64 size,
-			int *dest_vmids, int *dest_perms,
-			int dest_nelems)
+static inline int hyp_assign_phys(phys_addr_t addr, u64 size,
+			u32 *source_vmlist, int source_nelems,
+			int *dest_vmids, int *dest_perms, int dest_nelems)
 {
-	return -EINVAL;
+	return -ENOSYS;
 }
 static inline bool msm_secure_v2_is_supported(void)
 {
