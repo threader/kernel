@@ -35,8 +35,6 @@ struct ion_carveout_heap {
 	struct ion_heap heap;
 	struct gen_pool *pool;
 	ion_phys_addr_t base;
-	unsigned long allocated_bytes;
-	unsigned long total_size;
 };
 
 ion_phys_addr_t ion_carveout_allocate(struct ion_heap *heap,
@@ -45,22 +43,11 @@ ion_phys_addr_t ion_carveout_allocate(struct ion_heap *heap,
 {
 	struct ion_carveout_heap *carveout_heap =
 		container_of(heap, struct ion_carveout_heap, heap);
-	unsigned long offset = gen_pool_alloc_aligned(carveout_heap->pool,
-							size, ilog2(align));
+	unsigned long offset = gen_pool_alloc(carveout_heap->pool, size);
 
-	if (!offset) {
-		if ((carveout_heap->total_size -
-		      carveout_heap->allocated_bytes) >= size)
-			pr_debug("%s: heap %s has enough memory (%lx) but"
-				" the allocation of size %lx still failed."
-				" Memory is probably fragmented.",
-				__func__, heap->name,
-				carveout_heap->total_size -
-				carveout_heap->allocated_bytes, size);
+	if (!offset)
 		return ION_CARVEOUT_ALLOCATE_FAIL;
-	}
 
-	carveout_heap->allocated_bytes += size;
 	return offset;
 }
 
@@ -73,7 +60,6 @@ void ion_carveout_free(struct ion_heap *heap, ion_phys_addr_t addr,
 	if (addr == ION_CARVEOUT_ALLOCATE_FAIL)
 		return;
 	gen_pool_free(carveout_heap->pool, addr, size);
-	carveout_heap->allocated_bytes -= size;
 }
 
 static int ion_carveout_heap_phys(struct ion_heap *heap,

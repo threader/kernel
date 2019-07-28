@@ -103,14 +103,14 @@
 #endif
 
 #ifndef PAGE_OFFSET
-#define PAGE_OFFSET		(PHYS_OFFSET)
+#define PAGE_OFFSET		PLAT_PHYS_OFFSET
 #endif
 
 /*
  * The module can be at any place in ram in nommu mode.
  */
 #define MODULES_END		(END_MEM)
-#define MODULES_VADDR		(PHYS_OFFSET)
+#define MODULES_VADDR		PAGE_OFFSET
 
 #define XIP_VIRT_ADDR(physaddr)  (physaddr)
 

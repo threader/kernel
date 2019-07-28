@@ -23,7 +23,7 @@
 #include <asm/stacktrace.h>
 
 static int
-armpmu_map_cache_event(unsigned (*cache_map)
+armpmu_map_cache_event(const unsigned (*cache_map)
 				      [PERF_COUNT_HW_CACHE_MAX]
 				      [PERF_COUNT_HW_CACHE_OP_MAX]
 				      [PERF_COUNT_HW_CACHE_RESULT_MAX],
@@ -72,7 +72,7 @@ armpmu_map_raw_event(u32 raw_event_mask, u64 config)
 int
 armpmu_map_event(struct perf_event *event,
 		 const unsigned (*event_map)[PERF_COUNT_HW_MAX],
-		 unsigned (*cache_map)
+		 const unsigned (*cache_map)
 				[PERF_COUNT_HW_CACHE_MAX]
 				[PERF_COUNT_HW_CACHE_OP_MAX]
 				[PERF_COUNT_HW_CACHE_RESULT_MAX],
