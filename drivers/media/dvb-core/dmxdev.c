@@ -4021,7 +4021,7 @@ static int dvb_dmxdev_set_decoder_buffer(struct dmxdev *dmxdev,
 		  (buffs->buffers_num > DMX_MAX_DECODER_BUFFER_NUM))))
 		return -EINVAL;
 
-	if (0 == buffs->buffers_num) {
+	if (buffs->buffers_num == 0) {
 		/* Internal mode - linear buffers not supported in this mode */
 		if (!(caps.decoder.flags & DMX_BUFFER_INTERNAL_SUPPORT) ||
 			buffs->is_linear)
