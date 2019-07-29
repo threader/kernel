@@ -187,6 +187,26 @@ static inline struct jump_entry *static_key_entries(struct static_key *key)
 	return (struct jump_entry *)(key->type & ~JUMP_TYPE_MASK);
 }
 
+static inline bool static_key_type(struct static_key *key)
+{
+	return key->type & JUMP_TYPE_TRUE;
+}
+
+static inline bool static_key_linked(struct static_key *key)
+{
+	return key->type & JUMP_TYPE_LINKED;
+}
+
+static inline void static_key_clear_linked(struct static_key *key)
+{
+	key->type &= ~JUMP_TYPE_LINKED;
+}
+
+static inline void static_key_set_linked(struct static_key *key)
+{
+	key->type |= JUMP_TYPE_LINKED;
+}
+
 static inline struct static_key *jump_entry_key(struct jump_entry *entry)
 {
 	return (struct static_key *)((unsigned long)entry->key & ~1UL);
@@ -305,6 +325,12 @@ struct static_key_mod {
 	struct jump_entry *entries;
 	struct module *mod;
 };
+
+static inline struct static_key_mod *static_key_mod(struct static_key *key)
+{
+	WARN_ON_ONCE(!(key->type & JUMP_TYPE_LINKED));
+	return (struct static_key_mod *)(key->type & ~JUMP_TYPE_MASK);
+}
 
 static int __jump_label_mod_text_reserved(void *start, void *end)
 {

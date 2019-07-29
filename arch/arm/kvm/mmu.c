@@ -28,7 +28,12 @@
 #include <asm/kvm_mmio.h>
 #include <asm/kvm_asm.h>
 #include <asm/kvm_emulate.h>
-
+#define KVM_PHYS_SHIFT	(40)
+#define KVM_PHYS_SIZE	(1ULL << KVM_PHYS_SHIFT)
+#define KVM_PHYS_MASK	(KVM_PHYS_SIZE - 1ULL)
+#define PTRS_PER_S2_PGD	(1ULL << (KVM_PHYS_SHIFT - 30))
+#define S2_PGD_ORDER	get_order(PTRS_PER_S2_PGD * sizeof(pgd_t))
+#define S2_PGD_SIZE	(1 << S2_PGD_ORDER)
 #include "trace.h"
 
 extern char  __hyp_idmap_text_start[], __hyp_idmap_text_end[];
