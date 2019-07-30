@@ -28,6 +28,12 @@
 #include <asm/kvm_mmio.h>
 #include <asm/kvm_asm.h>
 #include <asm/kvm_emulate.h>
+#define KVM_PHYS_SHIFT	PHYS_MASK_SHIFT
+#define KVM_PHYS_SIZE	(1UL << KVM_PHYS_SHIFT)
+#define KVM_PHYS_MASK	(KVM_PHYS_SIZE - 1UL)
+
+/* Make sure we get the right size, and thus the right alignment */
+#define PTRS_PER_S2_PGD (1 << (KVM_PHYS_SHIFT - PGDIR_SHIFT))
 #define KVM_PHYS_SHIFT	(40)
 #define KVM_PHYS_SIZE	(1ULL << KVM_PHYS_SHIFT)
 #define KVM_PHYS_MASK	(KVM_PHYS_SIZE - 1ULL)
