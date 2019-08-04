@@ -23,12 +23,14 @@
 
 #include <linux/types.h>
 #include <linux/blk_types.h>
-#include <linux/msm_rtb.h>
 
 #include <asm/byteorder.h>
 #include <asm/barrier.h>
 #include <asm/pgtable.h>
 #include <asm/early_ioremap.h>
+#include <asm/alternative.h>
+#include <asm/cpufeature.h>
+#include <linux/msm_rtb.h>
 
 #include <xen/xen.h>
 
@@ -56,63 +58,46 @@ static inline void __raw_writeq_no_log(u64 val, volatile void __iomem *addr)
 	asm volatile("str %0, [%1]" : : "r" (val), "r" (addr));
 }
 
-#ifdef CONFIG_ARM64_A57_ERRATA_832075
 static inline u8 __raw_readb_no_log(const volatile void __iomem *addr)
 {
 	u8 val;
-	asm volatile("ldarb %w0, [%1]" : "=r" (val) : "r" (addr));
+	asm volatile(ALTERNATIVE("ldrb %w0, [%1]",
+				 "ldarb %w0, [%1]",
+				 ARM64_WORKAROUND_DEVICE_LOAD_ACQUIRE)
+		     : "=r" (val) : "r" (addr));
 	return val;
 }
 
 static inline u16 __raw_readw_no_log(const volatile void __iomem *addr)
 {
 	u16 val;
-	asm volatile("ldarh %w0, [%1]" : "=r" (val) : "r" (addr));
+
+	asm volatile(ALTERNATIVE("ldrh %w0, [%1]",
+				 "ldarh %w0, [%1]",
+				 ARM64_WORKAROUND_DEVICE_LOAD_ACQUIRE)
+		     : "=r" (val) : "r" (addr));
 	return val;
 }
 
 static inline u32 __raw_readl_no_log(const volatile void __iomem *addr)
 {
 	u32 val;
-	asm volatile("ldar %w0, [%1]" : "=r" (val) : "r" (addr));
+	asm volatile(ALTERNATIVE("ldr %w0, [%1]",
+				 "ldar %w0, [%1]",
+				 ARM64_WORKAROUND_DEVICE_LOAD_ACQUIRE)
+		     : "=r" (val) : "r" (addr));
 	return val;
 }
 
 static inline u64 __raw_readq_no_log(const volatile void __iomem *addr)
 {
 	u64 val;
-	asm volatile("ldar %0, [%1]" : "=r" (val) : "r" (addr));
+	asm volatile(ALTERNATIVE("ldr %0, [%1]",
+				 "ldar %0, [%1]",
+				 ARM64_WORKAROUND_DEVICE_LOAD_ACQUIRE)
+		     : "=r" (val) : "r" (addr));
 	return val;
 }
-#else
-static inline u8 __raw_readb_no_log(const volatile void __iomem *addr)
-{
-	u8 val;
-	asm volatile("ldrb %w0, [%1]" : "=r" (val) : "r" (addr));
-	return val;
-}
-
-static inline u16 __raw_readw_no_log(const volatile void __iomem *addr)
-{
-	u16 val;
-	asm volatile("ldrh %w0, [%1]" : "=r" (val) : "r" (addr));
-	return val;
-}
-
-static inline u32 __raw_readl_no_log(const volatile void __iomem *addr)
-{
-	u32 val;
-	asm volatile("ldr %w0, [%1]" : "=r" (val) : "r" (addr));
-	return val;
-}
-
-static inline u64 __raw_readq_no_log(const volatile void __iomem *addr)
-{
-	u64 val;
-	asm volatile("ldr %0, [%1]" : "=r" (val) : "r" (addr));
-	return val;
-}
-#endif /* CONFIG_ARM64_A57_ERRATA_832075 */
 
 /*
  * There may be cases when  clients don't want to support or can't support the
@@ -122,10 +107,11 @@ static inline u64 __raw_readq_no_log(const volatile void __iomem *addr)
 
 #define __raw_write_logged(v, a, _t) ({ \
 	int _ret; \
-	void *_addr = (void *)(a); \
+	volatile void __iomem *_a = (a); \
+	void *_addr = (void __force *)(_a); \
 	_ret = uncached_logk(LOGK_WRITEL, _addr); \
 	ETB_WAYPOINT; \
-	__raw_write##_t##_no_log((v), _addr); \
+	__raw_write##_t##_no_log((v), _a); \
 	if (_ret) \
 		LOG_BARRIER; \
 	})
@@ -137,11 +123,12 @@ static inline u64 __raw_readq_no_log(const volatile void __iomem *addr)
 
 #define __raw_read_logged(a, _l, _t)    ({ \
 	_t __a; \
-	void *_addr = (void *)(a); \
+	const volatile void __iomem *_a = (const volatile void __iomem *)(a); \
+	void *_addr = (void __force *)(_a); \
 	int _ret; \
 	_ret = uncached_logk(LOGK_READL, _addr); \
 	ETB_WAYPOINT; \
-	__a = __raw_read##_l##_no_log(_addr); \
+	__a = __raw_read##_l##_no_log(_a); \
 	if (_ret) \
 		LOG_BARRIER; \
 	__a; \

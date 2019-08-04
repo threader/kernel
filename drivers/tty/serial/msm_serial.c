@@ -897,6 +897,64 @@ static void msm_console_putchar(struct uart_port *port, int c)
 	msm_write(port, c, UART_TF);
 }
 
+static void __msm_console_write(struct uart_port *port, const char *s,
+				unsigned int count, bool is_uartdm)
+{
+	int i;
+	int num_newlines = 0;
+	bool replaced = false;
+	void __iomem *tf;
+
+	if (is_uartdm)
+		tf = port->membase + UARTDM_TF;
+	else
+		tf = port->membase + UART_TF;
+
+	/* Account for newlines that will get a carriage return added */
+	for (i = 0; i < count; i++)
+		if (s[i] == '\n')
+			num_newlines++;
+	count += num_newlines;
+
+	spin_lock(&port->lock);
+	if (is_uartdm)
+		reset_dm_count(port, count);
+
+	i = 0;
+	while (i < count) {
+		int j;
+		unsigned int num_chars;
+		char buf[4] = { 0 };
+
+		if (is_uartdm)
+			num_chars = min(count - i, (unsigned int)sizeof(buf));
+		else
+			num_chars = 1;
+
+		for (j = 0; j < num_chars; j++) {
+			char c = *s;
+
+			if (c == '\n' && !replaced) {
+				buf[j] = '\r';
+				j++;
+				replaced = true;
+			}
+			if (j < num_chars) {
+				buf[j] = c;
+				s++;
+				replaced = false;
+			}
+		}
+
+		while (!(msm_read(port, UART_SR) & UART_SR_TX_READY))
+			cpu_relax();
+
+		iowrite32_rep(tf, buf, 1);
+		i += num_chars;
+	}
+	spin_unlock(&port->lock);
+}
+
 static void msm_console_write(struct console *co, const char *s,
 			      unsigned int count)
 {
@@ -965,6 +1023,49 @@ static int __init msm_console_setup(struct console *co, char *options)
 	return uart_set_options(port, co, baud, parity, bits, flow);
 }
 
+static void
+msm_serial_early_write(struct console *con, const char *s, unsigned n)
+{
+	struct earlycon_device *dev = con->data;
+
+	__msm_console_write(&dev->port, s, n, false);
+}
+
+static int __init
+msm_serial_early_console_setup(struct earlycon_device *device, const char *opt)
+{
+	if (!device->port.membase)
+		return -ENODEV;
+
+	device->con->write = msm_serial_early_write;
+	return 0;
+}
+EARLYCON_DECLARE(msm_serial, msm_serial_early_console_setup);
+OF_EARLYCON_DECLARE(msm_serial, "qcom,msm-uart",
+		    msm_serial_early_console_setup);
+
+static void
+msm_serial_early_write_dm(struct console *con, const char *s, unsigned n)
+{
+	struct earlycon_device *dev = con->data;
+
+	__msm_console_write(&dev->port, s, n, true);
+}
+
+static int __init
+msm_serial_early_console_setup_dm(struct earlycon_device *device,
+				  const char *opt)
+{
+	if (!device->port.membase)
+		return -ENODEV;
+
+	device->con->write = msm_serial_early_write_dm;
+	return 0;
+}
+EARLYCON_DECLARE(msm_serial_dm, msm_serial_early_console_setup_dm);
+OF_EARLYCON_DECLARE(msm_serial_dm, "qcom,msm-uartdm",
+		    msm_serial_early_console_setup_dm);
+
 static struct uart_driver msm_uart_driver;
 
 static struct console msm_console = {
@@ -978,7 +1079,7 @@ static struct console msm_console = {
 };
 MODULE_DEVICE_TABLE(of, msm_match_table);
 
-#define MSM_CONSOLE	&msm_console
+#define MSM_CONSOLE	(&msm_console)
 
 #else
 #define MSM_CONSOLE	NULL

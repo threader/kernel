@@ -66,7 +66,6 @@
 unsigned int processor_id;
 EXPORT_SYMBOL(processor_id);
 
-EXPORT_SYMBOL_GPL(elf_hwcap);
 
 unsigned int boot_reason;
 EXPORT_SYMBOL(boot_reason);
