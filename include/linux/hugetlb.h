@@ -386,6 +386,15 @@ static inline pgoff_t basepage_index(struct page *page)
 	return __basepage_index(page);
 }
 
+static inline spinlock_t *huge_pte_lockptr(struct hstate *h,
+					   struct mm_struct *mm, pte_t *pte)
+{
+	if (huge_page_size(h) == PMD_SIZE)
+		return pmd_lockptr(mm, (pmd_t *) pte);
+	VM_BUG_ON(huge_page_size(h) == PAGE_SIZE);
+	return &mm->page_table_lock;
+}
+
 #else	/* CONFIG_HUGETLB_PAGE */
 struct hstate {};
 #define alloc_huge_page_node(h, nid) NULL
@@ -414,6 +423,11 @@ static inline pgoff_t basepage_index(struct page *page)
 	return page->index;
 }
 
+static inline spinlock_t *huge_pte_lockptr(struct hstate *h,
+					   struct mm_struct *mm, pte_t *pte)
+{
+	return &mm->page_table_lock;
+}
 #endif	/* CONFIG_HUGETLB_PAGE */
 
 #endif /* _LINUX_HUGETLB_H */

@@ -72,7 +72,8 @@ static inline int kvm_timer_hyp_init(void)
 {
 	return 0;
 };
-
+static inline void kvm_timer_vcpu_reset(struct kvm_vcpu *vcpu,
+					const struct kvm_irq_level *irq) {}
 static inline int kvm_timer_init(struct kvm *kvm)
 {
 	return 0;

@@ -7,6 +7,13 @@ if TTY
 menu "Serial drivers"
 	depends on HAS_IOMEM
 
+config SERIAL_EARLYCON
+	bool
+	help
+	  Support for early consoles with the earlycon parameter. This enables
+	  the console before standard serial driver is probed. The console is
+	  enabled when early_param is processed.
+
 source "drivers/tty/serial/8250/Kconfig"
 
 comment "Non-8250 serial port support"
@@ -53,6 +60,7 @@ config SERIAL_AMBA_PL011_CONSOLE
 	bool "Support for console on AMBA serial port"
 	depends on SERIAL_AMBA_PL011=y
 	select SERIAL_CORE_CONSOLE
+	select SERIAL_EARLYCON
 	---help---
 	  Say Y here if you wish to use an AMBA PrimeCell UART as the system
 	  console (the system console is the device which receives all kernel
@@ -64,6 +72,18 @@ config SERIAL_AMBA_PL011_CONSOLE
 	  "console=ttyAMA0". (Try "man bootparam" or see the documentation of
 	  your boot loader (lilo or loadlin) about how to pass options to the
 	  kernel at boot time.)
+
+config SERIAL_EARLYCON_ARM_SEMIHOST
+	bool "Early console using ARM semihosting"
+	depends on ARM64 || ARM
+	select SERIAL_CORE
+	select SERIAL_CORE_CONSOLE
+	select SERIAL_EARLYCON
+	help
+	  Support for early debug console using ARM semihosting. This enables
+	  the console before standard serial driver is probed. This is enabled
+	  with "earlycon=smh" on the kernel command line. The console is
+	  enabled when early_param is processed.
 
 config SERIAL_SB1250_DUART
 	tristate "BCM1xxx on-chip DUART serial support"
@@ -664,7 +684,7 @@ config PDC_CONSOLE
 	  Saying Y here will enable the software based PDC console to be 
 	  used as the system console.  This is useful for machines in 
 	  which the hardware based console has not been written yet.  The
-	  following steps must be competed to use the PDC console:
+	  following steps must be completed to use the PDC console:
 
 	    1. create the device entry (mknod /dev/ttyB0 c 11 0)
 	    2. Edit the /etc/inittab to start a getty listening on /dev/ttyB0
@@ -1033,6 +1053,7 @@ config SERIAL_MSM_CONSOLE
 	bool "MSM serial console support"
 	depends on SERIAL_MSM=y
 	select SERIAL_CORE_CONSOLE
+	select SERIAL_EARLYCON
 
 config SERIAL_MSM_HS
 	tristate "MSM UART High Speed: Serial Driver"
@@ -1066,6 +1087,7 @@ config SERIAL_MSM_HSL_CONSOLE
 	bool "MSM High speed serial legacy mode console support"
 	depends on SERIAL_MSM_HSL=y
 	select SERIAL_CORE_CONSOLE
+	select SERIAL_EARLYCON
 	default n
 
 config SERIAL_BCM_BT_LPM
@@ -1428,6 +1450,7 @@ config SERIAL_XILINX_PS_UART_CONSOLE
 	bool "Xilinx PS UART console support"
 	depends on SERIAL_XILINX_PS_UART=y
 	select SERIAL_CORE_CONSOLE
+	select SERIAL_EARLYCON
 	help
 	  Enable a Xilinx PS UART port to be the system console.
 
@@ -1478,6 +1501,7 @@ config SERIAL_ARC_CONSOLE
 	bool "Console on ARC UART"
 	depends on SERIAL_ARC=y
 	select SERIAL_CORE_CONSOLE
+	select SERIAL_EARLYCON
 	help
 	  Enable system Console on ARC UART
 

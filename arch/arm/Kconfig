@@ -1792,6 +1792,9 @@ config HAVE_ARCH_TRANSPARENT_HUGEPAGE
        def_bool y
        depends on ARM_LPAE
 
+config ARCH_WANT_GENERAL_HUGETLB
+	def_bool y
+
 config PERF_EVENTS_RESET_PMU_DEBUGFS
 	bool "Reset PMU via debugfs node"
 	depends on PERF_EVENTS
