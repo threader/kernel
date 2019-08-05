@@ -6234,7 +6234,7 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 		return 0;
 
 	if (env->flags & LBF_IGNORE_PREFERRED_CLUSTER_TASKS &&
-			!preferred_cluster(cpu_rq(env->dst_cpu)->cluster, p))
+			!preferred_cluster(rq_cluster(cpu_rq(env->dst_cpu)), p))
 		return 0;
 
 	/*

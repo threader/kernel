@@ -16,6 +16,10 @@
 #ifndef __ASM_SMP_H
 #define __ASM_SMP_H
 
+#ifndef __ASSEMBLY__
+
+#include <asm/percpu.h>
+
 #include <linux/threads.h>
 #include <linux/cpumask.h>
 #include <linux/thread_info.h>
@@ -77,4 +81,7 @@ static inline void cpu_park_loop(void)
 		wfi();
 	}
 }
+
+#endif /* ifndef __ASSEMBLY__ */
+
 #endif /* ifndef __ASM_SMP_H */

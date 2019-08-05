@@ -40,6 +40,7 @@
 #include <asm/debug-monitors.h>
 #include <asm/esr.h>
 #include <asm/traps.h>
+#include <asm/smp.h>
 #include <asm/stacktrace.h>
 #include <asm/exception.h>
 #include <asm/system_misc.h>

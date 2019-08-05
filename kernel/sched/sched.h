@@ -1066,11 +1066,12 @@ static inline void task_note_last_sleep(struct task_struct *p, u64 wallclock)
 {
 	p->last_sleep_ts = wallclock;
 }
-
+extern struct sched_cluster *rq_cluster(struct rq *rq);
 #else	/* CONFIG_SCHED_HMP */
 
 struct hmp_sched_stats;
 struct related_thread_group;
+struct sched_cluster;
 
 static inline unsigned int nr_eligible_big_tasks(int cpu)
 {
@@ -1099,6 +1100,18 @@ static inline void sched_account_irqtime(int cpu, struct task_struct *curr,
 {
 }
 
+static inline int task_will_fit(struct task_struct *p, int cpu)
+{
+	return 1;
+}
+
+static inline int select_best_cpu(struct task_struct *p, int target,
+				  int reason, int sync)
+{
+	return 0;
+}
+
+
 static inline int sched_cpu_high_irqload(int cpu) { return 0; }
 
 static inline int same_cluster(int src_cpu, int dst_cpu) { return 1; }
@@ -1110,7 +1123,35 @@ struct related_thread_group *task_related_thread_group(struct task_struct *p)
 {
 	return NULL;
 }
+static inline int sched_boost(void)
+{
+	return 0;
+}
 
+static inline int is_big_task(struct task_struct *p)
+{
+	return 0;
+}
+
+static inline int is_small_task(struct task_struct *p)
+{
+	return 0;
+}
+
+static inline int nr_big_tasks(struct rq *rq)
+{
+	return 0;
+}
+
+static inline int is_cpu_throttling_imminent(int cpu)
+{
+	return 0;
+}
+
+static inline int is_task_migration_throttled(struct task_struct *p)
+{
+	return 0;
+}
 static inline u32 task_load(struct task_struct *p) { return 0; }
 
 static inline int update_preferred_cluster(struct related_thread_group *grp,
@@ -1124,7 +1165,16 @@ add_new_task_to_grp(struct task_struct *p) {}
 static inline void task_note_last_sleep(struct task_struct *p, u64 wallclock) {}
 
 #endif	/* CONFIG_SCHED_HMP */
+static inline int
+preferred_cluster(struct sched_cluster *cluster, struct task_struct *p)
+{
+	return 1;
+}
 
+static inline struct sched_cluster *rq_cluster(struct rq *rq)
+{
+	return NULL;
+}
 /*
  * Returns the rq capacity of any rq in a group. This does not play
  * well with groups where rq capacity can change independently.
