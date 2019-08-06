@@ -1164,12 +1164,12 @@ add_new_task_to_grp(struct task_struct *p) {}
 
 static inline void task_note_last_sleep(struct task_struct *p, u64 wallclock) {}
 
-#endif	/* CONFIG_SCHED_HMP */
+#endif	/* CONFIG_SCHED_HMP 
 static inline int
 preferred_cluster(struct sched_cluster *cluster, struct task_struct *p)
 {
 	return 1;
-}
+}*/
 
 static inline struct sched_cluster *rq_cluster(struct rq *rq)
 {

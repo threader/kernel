@@ -3152,10 +3152,6 @@ static inline int mostly_idle_cpu(int cpu)
 	return 0;
 }
 
-static inline int sched_boost(void)
-{
-	return 0;
-}
 
 
 unsigned int cpu_temp(int cpu)
