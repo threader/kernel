@@ -54,6 +54,9 @@
 #undef __string
 #define __string(item, src) __dynamic_array(char, item, -1)
 
+#undef __bitmask
+#define __bitmask(item, nr_bits) __dynamic_array(char, item, -1)
+
 #undef TP_STRUCT__entry
 #define TP_STRUCT__entry(args...) args
 
@@ -120,6 +123,9 @@
 
 #undef __string
 #define __string(item, src) __dynamic_array(char, item, -1)
+
+#undef __bitmask
+#define __bitmask(item, nr_bits) __dynamic_array(unsigned long, item, -1)
 
 #undef DECLARE_EVENT_CLASS
 #define DECLARE_EVENT_CLASS(call, proto, args, tstruct, assign, print)	\
@@ -189,6 +195,15 @@
 
 #undef __get_str
 #define __get_str(field) (char *)__get_dynamic_array(field)
+
+#undef __get_bitmask
+#define __get_bitmask(field)						\
+	({								\
+		void *__bitmask = __get_dynamic_array(field);		\
+		unsigned int __bitmask_size;				\
+		__bitmask_size = __get_dynamic_array_len(field);	\
+		ftrace_print_bitmask_seq(p, __bitmask, __bitmask_size);	\
+	})
 
 #undef __print_flags
 #define __print_flags(flag, delim, flag_array...)			\
@@ -320,6 +335,9 @@ static struct trace_event_functions ftrace_event_type_funcs_##call = {	\
 #undef __string
 #define __string(item, src) __dynamic_array(char, item, -1)
 
+#undef __bitmask
+#define __bitmask(item, nr_bits) __dynamic_array(unsigned long, item, -1)
+
 #undef DECLARE_EVENT_CLASS
 #define DECLARE_EVENT_CLASS(call, proto, args, tstruct, func, print)	\
 static int notrace __init						\
@@ -360,14 +378,38 @@ ftrace_define_fields_##call(struct ftrace_event_call *event_call)	\
 
 #undef __dynamic_array
 #define __dynamic_array(type, item, len)				\
+	__item_length = (len) * sizeof(type);				\
 	__data_offsets->item = __data_size +				\
 			       offsetof(typeof(*entry), __data);	\
-	__data_offsets->item |= (len * sizeof(type)) << 16;		\
-	__data_size += (len) * sizeof(type);
+	__data_offsets->item |= __item_length << 16;			\
+	__data_size += __item_length;
 
 #undef __string
 #define __string(item, src) __dynamic_array(char, item,			\
 		    strlen((src) ? (const char *)(src) : "(null)") + 1)
+
+/*
+ * __bitmask_size_in_bytes_raw is the number of bytes needed to hold
+ * num_possible_cpus().
+ */
+#define __bitmask_size_in_bytes_raw(nr_bits)	\
+	(((nr_bits) + 7) / 8)
+
+#define __bitmask_size_in_longs(nr_bits)			\
+	((__bitmask_size_in_bytes_raw(nr_bits) +		\
+	  ((BITS_PER_LONG / 8) - 1)) / (BITS_PER_LONG / 8))
+
+/*
+ * __bitmask_size_in_bytes is the number of bytes needed to hold
+ * num_possible_cpus() padded out to the nearest long. This is what
+ * is saved in the buffer, just to be consistent.
+ */
+#define __bitmask_size_in_bytes(nr_bits)				\
+	(__bitmask_size_in_longs(nr_bits) * (BITS_PER_LONG / 8))
+
+#undef __bitmask
+#define __bitmask(item, nr_bits) __dynamic_array(unsigned long, item,	\
+					 __bitmask_size_in_longs(nr_bits))
 
 #undef DECLARE_EVENT_CLASS
 #define DECLARE_EVENT_CLASS(call, proto, args, tstruct, assign, print)	\
@@ -375,7 +417,8 @@ static inline notrace int ftrace_get_offsets_##call(			\
 	struct ftrace_data_offsets_##call *__data_offsets, proto)       \
 {									\
 	int __data_size = 0;						\
-	struct ftrace_raw_##call __maybe_unused *entry;			\
+	int __maybe_unused __item_length;				\
+	struct ftrace_raw _##call __maybe_unused *entry;			\
 									\
 	tstruct;							\
 									\
@@ -493,11 +536,21 @@ static inline notrace int ftrace_get_offsets_##call(			\
 	__entry->__data_loc_##item = __data_offsets.item;
 
 #undef __string
-#define __string(item, src) __dynamic_array(char, item, -1)       	\
+#define __string(item, src) __dynamic_array(char, item, -1)
 
 #undef __assign_str
 #define __assign_str(dst, src)						\
 	strcpy(__get_str(dst), (src) ? (const char *)(src) : "(null)");
+
+#undef __bitmask
+#define __bitmask(item, nr_bits) __dynamic_array(unsigned long, item, -1)
+
+#undef __get_bitmask
+#define __get_bitmask(field) (char *)__get_dynamic_array(field)
+
+#undef __assign_bitmask
+#define __assign_bitmask(dst, src, nr_bits)					\
+	memcpy(__get_bitmask(dst), (src), __bitmask_size_in_bytes(nr_bits))
 
 #undef TP_fast_assign
 #define TP_fast_assign(args...) args
@@ -574,7 +627,7 @@ static inline void ftrace_test_probe_##call(void)			\
 #undef __print_hex
 #undef __get_dynamic_array
 #undef __get_str
-
+#undef __get_bitmask
 #undef TP_printk
 #define TP_printk(fmt, args...) "\"" fmt "\", "  __stringify(args)
 

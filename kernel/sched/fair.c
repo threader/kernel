@@ -3135,16 +3135,6 @@ unsigned int cpu_temp(int cpu)
 
 #define sysctl_sched_enable_power_aware 0
 
-static inline int task_will_fit(struct task_struct *p, int cpu)
-{
-	return 1;
-}
-
-static inline int select_best_cpu(struct task_struct *p, int target,
-				  int reason, int sync)
-{
-	return 0;
-}
 
 static inline int find_new_hmp_ilb(int call_cpu, int type)
 {
@@ -3167,30 +3157,6 @@ static inline int sched_boost(void)
 	return 0;
 }
 
-static inline int is_small_task(struct task_struct *p)
-{
-	return 0;
-}
-
-static inline int is_big_task(struct task_struct *p)
-{
-	return 0;
-}
-
-static inline int nr_big_tasks(struct rq *rq)
-{
-	return 0;
-}
-
-static inline int is_cpu_throttling_imminent(int cpu)
-{
-	return 0;
-}
-
-static inline int is_task_migration_throttled(struct task_struct *p)
-{
-	return 0;
-}
 
 unsigned int cpu_temp(int cpu)
 {

@@ -1066,7 +1066,7 @@ static inline void task_note_last_sleep(struct task_struct *p, u64 wallclock)
 {
 	p->last_sleep_ts = wallclock;
 }
-extern struct sched_cluster *rq_cluster(struct rq *rq);
+//extern struct sched_cluster *rq_cluster(struct rq *rq);
 #else	/* CONFIG_SCHED_HMP */
 
 struct hmp_sched_stats;
