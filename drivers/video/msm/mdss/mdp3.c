@@ -587,7 +587,7 @@ static void mdp3_clk_remove(void)
 
 int mdp3_clk_enable(int enable, int dsi_clk)
 {
-	int rc;
+	int rc = 0;
 
 	pr_debug("MDP CLKS %s\n", (enable ? "Enable" : "Disable"));
 

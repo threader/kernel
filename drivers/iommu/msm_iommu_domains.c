@@ -466,10 +466,10 @@ void msm_free_iova_address(unsigned long iova,
 
 	pool->free += size;
 
-	/* Offset because genpool can't handle 0 addresses */
+	/* Offset because genpool can't handle 0 addresses 
 	if (pool->paddr == 0)
 		iova += SZ_4K;
-
+*/
 	mutex_lock(&pool->pool_mutex);
 	bitmap_clear(pool->bitmap, (iova - pool->paddr) >> PAGE_SHIFT,
 				PAGE_ALIGN(size) >> PAGE_SHIFT);
