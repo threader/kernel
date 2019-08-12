@@ -1066,12 +1066,11 @@ static inline void task_note_last_sleep(struct task_struct *p, u64 wallclock)
 {
 	p->last_sleep_ts = wallclock;
 }
-//extern struct sched_cluster *rq_cluster(struct rq *rq);
+
 #else	/* CONFIG_SCHED_HMP */
 
 struct hmp_sched_stats;
 struct related_thread_group;
-struct sched_cluster;
 
 static inline unsigned int nr_eligible_big_tasks(int cpu)
 {
@@ -1164,17 +1163,8 @@ add_new_task_to_grp(struct task_struct *p) {}
 
 static inline void task_note_last_sleep(struct task_struct *p, u64 wallclock) {}
 
-#endif	/* CONFIG_SCHED_HMP 
-static inline int
-preferred_cluster(struct sched_cluster *cluster, struct task_struct *p)
-{
-	return 1;
-}*/
+#endif	/* CONFIG_SCHED_HMP */
 
-static inline struct sched_cluster *rq_cluster(struct rq *rq)
-{
-	return NULL;
-}
 /*
  * Returns the rq capacity of any rq in a group. This does not play
  * well with groups where rq capacity can change independently.

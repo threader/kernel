@@ -3015,9 +3015,9 @@ static inline int migration_needed(struct rq *rq, struct task_struct *p)
 		return 0;
 	}
 
-	if (!preferred_cluster(rq->cluster, p))
+	/*if (!preferred_cluster(rq->cluster, p))
 		return PREFERRED_CLUSTER_MIGRATION;
-
+*/
 	if (is_small_task(p))
 		return 0;
 
@@ -6195,10 +6195,10 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 	if (env->flags & LBF_IGNORE_BIG_TASKS && !twf)
 		return 0;
 
-	if (env->flags & LBF_IGNORE_PREFERRED_CLUSTER_TASKS &&
-			!preferred_cluster(rq_cluster(cpu_rq(env->dst_cpu)), p))
+	/*if (env->flags & LBF_IGNORE_PREFERRED_CLUSTER_TASKS &&
+			!preferred_cluster(cpu_rq(env->dst_cpu)->cluster, p))
 		return 0;
-
+*/
 	/*
 	 * Group imbalance can sometimes cause work to be pulled across groups
 	 * even though the group could have managed the imbalance on its own.
