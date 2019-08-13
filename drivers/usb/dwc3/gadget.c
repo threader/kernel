@@ -2226,6 +2226,19 @@ static int dwc3_gadget_start(struct usb_gadget *g,
 	struct dwc3		*dwc = gadget_to_dwc(g);
 	unsigned long		flags;
 	int			ret = 0;
+	int			irq;
+
+	pm_runtime_get_sync(dwc->dev);
+	dbg_event(0xFF, "GdgStrt Begin",
+		atomic_read(&dwc->dev->power.usage_count));
+	irq = platform_get_irq(to_platform_device(dwc->dev), 0);
+	dwc->irq = irq;
+	ret = request_irq(irq, dwc3_interrupt, IRQF_SHARED, "dwc3", dwc);
+	if (ret) {
+		dev_err(dwc->dev, "failed to request irq #%d --> %d\n",
+				irq, ret);
+		goto err0;
+	}
 
 	g->interrupt_num = dwc->irq;
 	spin_lock_irqsave(&dwc->lock, flags);
@@ -2235,7 +2248,7 @@ static int dwc3_gadget_start(struct usb_gadget *g,
 				dwc->gadget.name,
 				dwc->gadget_driver->driver.name);
 		ret = -EBUSY;
-		goto err0;
+		goto err1;
 	}
 
 	dwc->gadget_driver	= driver;
@@ -2246,11 +2259,28 @@ static int dwc3_gadget_start(struct usb_gadget *g,
 	 * device-specific initialization until device mode is activated.
 	 * In that case dwc3_gadget_restart() will handle it.
 	 */
+	if (!dwc->dotg) {
+		ret = __dwc3_gadget_start(dwc);
+		if (ret)
+			goto err1;
+	}
+
 	spin_unlock_irqrestore(&dwc->lock, flags);
+	pm_runtime_put(dwc->dev);
+	dbg_event(0xFF, "GdgStrt End",
+		atomic_read(&dwc->dev->power.usage_count));
+
 	return 0;
 
-err0:
+err1:
 	spin_unlock_irqrestore(&dwc->lock, flags);
+	pm_runtime_put(dwc->dev);
+	dbg_event(0xFF, "GdgStrt Err",
+		atomic_read(&dwc->dev->power.usage_count));
+
+err0:
+	free_irq(irq, dwc);
+
 	return ret;
 }
 
