@@ -178,6 +178,8 @@ asmlinkage void __cpuinit secondary_start_kernel(void)
 	smp_store_cpu_info(cpu);
 
 	notify_cpu_starting(cpu);
+	local_irq_enable();
+	local_fiq_enable();
 
 	/*
 	 * OK, now it's safe to let the boot CPU continue.  Wait for
