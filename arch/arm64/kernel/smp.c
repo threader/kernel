@@ -208,14 +208,6 @@ static int op_cpu_disable(unsigned int cpu)
 		return -EOPNOTSUPP;
 
 	/*
-	 * Enable GIC and timers.
-
-	notify_cpu_starting(cpu);
-
-	local_irq_enable();
-	local_fiq_enable();
-	 */
-	/*
 	 * We may need to abort a hot unplug for some other mechanism-specific
 	 * reason.
 	 */
