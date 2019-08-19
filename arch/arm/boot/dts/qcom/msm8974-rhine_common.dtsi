@@ -31,7 +31,7 @@ chosen {
             width = <1920>;
             height = <1080>;
             stride = <(1920*2)>;
-            format = "r5g6b5";
+            format = "b8g8r8";
 			//clocks = "<&clk_mdss_mdp_clk>";
             //status = "enable";
 			//display = "&mdss_dsi@0";
@@ -62,6 +62,47 @@ chosen {
 };
 
 &soc {
+
+	serial@f991f000 {
+		compatible = "qcom,msm-lsuart-v14";
+		reg = <0xf991f000 0x1000>;
+		interrupts = <0 109 0>;
+		status = "disabled";
+
+		clock-names = "core_clk", "iface_clk";
+		clocks = <&clock_gcc clk_gcc_blsp1_uart3_apps_clk>,
+			<&clock_gcc clk_gcc_blsp1_ahb_clk>;
+	};
+
+	serial@f995e000 {
+		compatible = "qcom,msm-lsuart-v14";
+		reg = <0xf995e000 0x1000>;
+		interrupts = <0 114 0>;
+		status = "disabled";
+
+		clock-names = "core_clk", "iface_clk";
+		clocks = <&clock_gcc clk_gcc_blsp2_uart2_apps_clk>,
+			<&clock_gcc clk_gcc_blsp2_ahb_clk>;
+	};
+
+	blsp1_uart1: serial@f991e000 {
+		compatible = "qcom,msm-lsuart-v14";
+		reg = <0xf991e000 0x1000>;
+		interrupts = <0 108 0>;
+		status = "disabled";
+
+		clock-names = "core_clk", "iface_clk";
+		clocks = <&clock_gcc clk_gcc_blsp1_uart2_apps_clk>,
+			<&clock_gcc clk_gcc_blsp1_ahb_clk>;
+
+		qcom,msm-bus,name = "serial_uart2";
+		qcom,msm-bus,num-cases = <2>;
+		qcom,msm-bus,num-paths = <1>;
+		qcom,msm-bus,vectors-KBps =
+				<86 512 0 0>,
+				<86 512 500 800>;
+	};
+
 	ramoops {
 		compatible = "ramoops";
 		status = "ok";
