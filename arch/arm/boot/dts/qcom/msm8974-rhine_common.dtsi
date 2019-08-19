@@ -12,6 +12,32 @@
  */
 
 / {
+
+aliases {
+	serial0 = &blsp1_uart1;
+};
+
+chosen {
+	stdout-path = "serial0:115200n8";
+
+    #address-cells = <0x1>;
+    #size-cells = <0x1>;
+    ranges;
+
+    framebuffer //  @0 //0: framebuffer@2200000
+    {
+            compatible = "simple-framebuffer";
+            reg = <0x2200000 (1920 * 1080 * 2)>;
+            width = <1920>;
+            height = <1080>;
+            stride = <(1920*2)>;
+            format = "r5g6b5";
+			//clocks = "<&clk_mdss_mdp_clk>";
+            //status = "enable";
+			//display = "&mdss_dsi@0";
+    };
+
+};
         memory {
 		camera_mem: camera_region@0 {
 			linux,reserve-contiguous-region;
