@@ -128,8 +128,8 @@ static int smcmod_send_buf_cmd(struct smcmod_buf_req *reqp)
 	struct ion_handle *ion_resp_handlep = NULL;
 	void *cmd_vaddrp = NULL;
 	void *resp_vaddrp = NULL;
-	unsigned long cmd_buf_size = 0;
-	unsigned long resp_buf_size = 0;
+	size_t cmd_buf_size = 0;
+	size_t resp_buf_size = 0;
 
 	/* sanity check the argument */
 	if (IS_ERR_OR_NULL(reqp))
