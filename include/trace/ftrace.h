@@ -418,7 +418,7 @@ static inline notrace int ftrace_get_offsets_##call(			\
 {									\
 	int __data_size = 0;						\
 	int __maybe_unused __item_length;				\
-	struct ftrace_raw _##call __maybe_unused *entry;			\
+	struct ftrace_raw_##call __maybe_unused *entry;			\
 									\
 	tstruct;							\
 									\
