@@ -185,7 +185,7 @@ static inline unsigned long __virt_to_phys(unsigned long x)
 static inline unsigned long __phys_to_virt(unsigned long x)
 {
 	unsigned long t;
-	__pv_stub(x, t, "sub", __PV_BITS_31_24);
+	__pv_stub((unsigned long)x, t, "sub", __PV_BITS_31_24);
 	return t;
 }
 #else
