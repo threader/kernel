@@ -661,7 +661,7 @@ const void * __init of_flat_dt_match_machine(const void *default_match,
  * early_init_dt_check_for_initrd - Decode initrd location from flat tree
  * @node: reference to node containing initrd location ('chosen')
  */
-void __init early_init_dt_check_for_initrd(unsigned long node)
+static void __init early_init_dt_check_for_initrd(unsigned long node)
 {
 	u64 start, end;
 	int len;
@@ -684,7 +684,7 @@ void __init early_init_dt_check_for_initrd(unsigned long node)
 		 (unsigned long long)start, (unsigned long long)end);
 }
 #else
-inline void early_init_dt_check_for_initrd(unsigned long node)
+static inline void early_init_dt_check_for_initrd(unsigned long node)
 {
 }
 #endif /* CONFIG_BLK_DEV_INITRD */
@@ -692,7 +692,7 @@ inline void early_init_dt_check_for_initrd(unsigned long node)
 #ifdef CONFIG_SERIAL_EARLYCON
 extern struct of_device_id __earlycon_of_table[];
 
-int __init early_init_dt_scan_chosen_serial(void)
+static int __init early_init_dt_scan_chosen_serial(void)
 {
 	int offset;
 	const char *p;
