@@ -226,6 +226,5 @@ struct msm_camera_return_buf {
 
 #define VIDIOC_MSM_CAMERA_PRIVATE_IOCTL_CMD \
 	_IOWR('V', BASE_VIDIOC_PRIVATE, struct msm_camera_private_ioctl_arg)
-#endif
 
 #endif /* __LINUX_MSMB_CAMERA_H */
