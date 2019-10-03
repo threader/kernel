@@ -217,4 +217,15 @@ struct msm_camera_user_buf_cont_t {
 	unsigned int buf_idx[MSM_CAMERA_MAX_USER_BUFF_CNT];
 };
 
+struct msm_camera_return_buf {
+	__u32 index;
+	__u32 reserved;
+};
+#define MSM_CAMERA_PRIV_IOCTL_ID_BASE 0
+#define MSM_CAMERA_PRIV_IOCTL_ID_RETURN_BUF 1
+
+#define VIDIOC_MSM_CAMERA_PRIVATE_IOCTL_CMD \
+	_IOWR('V', BASE_VIDIOC_PRIVATE, struct msm_camera_private_ioctl_arg)
+#endif
+
 #endif /* __LINUX_MSMB_CAMERA_H */
