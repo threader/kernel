@@ -184,6 +184,8 @@ static int seemp_logk_usr_record(const char __user *buf, size_t count)
 		if (copy_from_user(&usr_blk.payload, &local_blk->payload,
 					sizeof(struct blk_payload)) != 0)
 			return -EFAULT;
+	} else {
+		return -EFAULT;
 	}
 	idx = ret = 0;
 	now = current_kernel_time();
