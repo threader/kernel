@@ -30,6 +30,9 @@
 #include <linux/completion.h>
 #include <linux/msm_smd_pkt.h>
 #include <linux/poll.h>
+#include <soc/qcom/smd.h>
+#include <soc/qcom/smsm.h>
+#include <soc/qcom/subsystem_restart.h>
 #include <asm/ioctls.h>
 #include <linux/pm.h>
 #include <linux/of.h>
@@ -359,6 +362,7 @@ static long smd_pkt_ioctl(struct file *file, unsigned int cmd,
 {
 	int ret;
 	struct smd_pkt_dev *smd_pkt_devp;
+	uint32_t val;
 
 	smd_pkt_devp = file->private_data;
 	if (!smd_pkt_devp)
@@ -372,9 +376,15 @@ static long smd_pkt_ioctl(struct file *file, unsigned int cmd,
 		ret = smd_tiocmget(smd_pkt_devp->ch);
 		break;
 	case TIOCMSET:
-		D_STATUS("%s TIOCSET command on smd_pkt_dev id:%d\n",
-			 __func__, smd_pkt_devp->i);
-		ret = smd_tiocmset(smd_pkt_devp->ch, arg, ~arg);
+		ret = get_user(val, (uint32_t *)arg);
+		if (ret) {
+			pr_err("Error getting TIOCMSET value\n");
+			mutex_unlock(&smd_pkt_devp->ch_lock);
+			return ret;
+		}
+		D_STATUS("%s TIOCSET command on smd_pkt_dev id:%d arg[0x%x]\n",
+			 __func__, smd_pkt_devp->i, val);
+		ret = smd_tiocmset(smd_pkt_devp->ch, val, ~val);
 		break;
 	case SMD_PKT_IOCTL_BLOCKING_WRITE:
 		ret = get_user(smd_pkt_devp->blocking_write, (int *)arg);
@@ -1071,7 +1081,7 @@ int smd_pkt_open(struct inode *inode, struct file *file)
 	if (smd_pkt_devp->ch == 0) {
 		unsigned open_wait_rem = smd_pkt_devp->open_modem_wait * 1000;
 
-		INIT_COMPLETION(smd_pkt_devp->ch_allocated);
+		reinit_completion(&smd_pkt_devp->ch_allocated);
 
 		r = smd_pkt_add_driver(smd_pkt_devp);
 		if (r) {
@@ -1149,8 +1159,10 @@ int smd_pkt_open(struct inode *inode, struct file *file)
 				smd_pkt_devp->ch_opened_wait_queue,
 				smd_pkt_devp->is_open,
 				msecs_to_jiffies(open_wait_rem));
-		if (r == 0) {
+		if (r == 0)
 			r = -ETIMEDOUT;
+
+		if (r < 0) {
 			/* close the ch to sync smd's state with smd_pkt */
 			smd_close(smd_pkt_devp->ch);
 			smd_pkt_devp->ch = NULL;
@@ -1179,8 +1191,10 @@ int smd_pkt_open(struct inode *inode, struct file *file)
 		smd_pkt_devp->ref_cnt++;
 	}
 release_pil:
-	if (peripheral && (r < 0))
+	if (peripheral && (r < 0)) {
 		subsystem_put(smd_pkt_devp->pil);
+		smd_pkt_devp->pil = NULL;
+	}
 
 release_pd:
 	if (r < 0)
@@ -1196,6 +1210,7 @@ int smd_pkt_release(struct inode *inode, struct file *file)
 {
 	int r = 0;
 	struct smd_pkt_dev *smd_pkt_devp = file->private_data;
+	unsigned long flags;
 
 	if (!smd_pkt_devp) {
 		pr_err_ratelimited("%s on a NULL device\n", __func__);
@@ -1221,7 +1236,12 @@ int smd_pkt_release(struct inode *inode, struct file *file)
 			subsystem_put(smd_pkt_devp->pil);
 		smd_pkt_devp->has_reset = 0;
 		smd_pkt_devp->do_reset_notification = 0;
-		smd_pkt_devp->ws_locked = 0;
+		spin_lock_irqsave(&smd_pkt_devp->pa_spinlock, flags);
+		if (smd_pkt_devp->ws_locked) {
+			__pm_relax(&smd_pkt_devp->pa_ws);
+			smd_pkt_devp->ws_locked = 0;
+		}
+		spin_unlock_irqrestore(&smd_pkt_devp->pa_spinlock, flags);
 	}
 	mutex_unlock(&smd_pkt_devp->tx_lock);
 	mutex_unlock(&smd_pkt_devp->rx_lock);
