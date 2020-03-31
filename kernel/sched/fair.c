@@ -1652,7 +1652,7 @@ static inline int upmigrate_discouraged(struct task_struct *p)
 static inline int is_big_task(struct task_struct *p)
 {
 	u64 load = task_load(p);
-	int nice = TASK_NICE(p);
+	int nice = task_nice(p);
 
 	if (nice > sched_upmigrate_min_nice || upmigrate_discouraged(p))
 		return 0;
@@ -1834,7 +1834,7 @@ static int task_load_will_fit(struct task_struct *p, u64 task_load, int cpu)
 		if (cpu_capacity(cpu) > cpu_capacity(prev_cpu))
 			return 1;
 	} else {
-		nice = TASK_NICE(p);
+		nice = task_nice(p);
 		if (nice > sched_upmigrate_min_nice || upmigrate_discouraged(p))
 			return 1;
 
@@ -2998,7 +2998,7 @@ static inline int is_task_migration_throttled(struct task_struct *p);
  */
 static inline int migration_needed(struct rq *rq, struct task_struct *p)
 {
-	int nice = TASK_NICE(p);
+	int nice;
 	int cpu = cpu_of(rq);
 
 	if (!sched_enable_hmp || p->state != TASK_RUNNING)
@@ -3023,7 +3023,7 @@ static inline int migration_needed(struct rq *rq, struct task_struct *p)
 
 	if (sched_cpu_high_irqload(cpu))
 		return IRQLOAD_MIGRATION;
-
+	nice = task_nice(p);
 	if ((!sysctl_sched_enable_colocation ||
 			!p->grp ||
 			p->grp->preferred_cluster->capacity == min_capacity) &&
