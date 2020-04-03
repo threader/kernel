@@ -20,7 +20,7 @@
 #ifndef _UAPI_LINUX_BINDER_H
 #define _UAPI_LINUX_BINDER_H
 
-//#include <linux/types.h>
+#include <linux/types.h>
 #include <linux/ioctl.h>
 
 #define B_PACK_CHARS(c1, c2, c3, c4) \
@@ -93,9 +93,8 @@ enum flat_binder_object_flags {
 	 *
 	 * Only when set, causes senders to include their security
 	 * context
-
-	FLAT_BINDER_FLAG_TXN_SECURITY_CTX = 0x1000,
 	 */
+	FLAT_BINDER_FLAG_TXN_SECURITY_CTX = 0x1000,
 };
 
 #ifdef BINDER_IPC_32BIT
@@ -371,10 +370,10 @@ enum binder_driver_return_protocol {
 
 	BR_OK = _IO('r', 1),
 	/* No parameters! */
-	/*
+
 	BR_TRANSACTION_SEC_CTX = _IOR('r', 2,
 				      struct binder_transaction_data_secctx),
-
+	/*
 	 * binder_transaction_data_secctx: the received command.
 	 */
 	BR_TRANSACTION = _IOR('r', 2, struct binder_transaction_data),

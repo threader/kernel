@@ -2328,7 +2328,8 @@ find_extend_vma(struct mm_struct *mm, unsigned long addr)
 	vma = find_vma_prev(mm, addr, &prev);
 	if (vma && (vma->vm_start <= addr))
 		return vma;
-	if (!prev || expand_stack(prev, addr))
+	/* don't alter vm_end if the coredump is running */
+	if (!prev || !mmget_still_valid(mm) || expand_stack(prev, addr))
 		return NULL;
 	if (prev->vm_flags & VM_LOCKED)
 		__mlock_vma_pages_range(prev, addr, prev->vm_end, NULL);
@@ -2341,18 +2342,21 @@ int expand_stack(struct vm_area_struct *vma, unsigned long address)
 }
 
 struct vm_area_struct *
-find_extend_vma(struct mm_struct * mm, unsigned long addr)
+find_extend_vma(struct mm_struct *mm, unsigned long addr)
 {
-	struct vm_area_struct * vma;
+	struct vm_area_struct *vma;
 	unsigned long start;
 
 	addr &= PAGE_MASK;
-	vma = find_vma(mm,addr);
+	vma = find_vma(mm, addr);
 	if (!vma)
 		return NULL;
 	if (vma->vm_start <= addr)
 		return vma;
 	if (!(vma->vm_flags & VM_GROWSDOWN))
+		return NULL;
+	/* don't alter vm_start if the coredump is running */
+	if (!mmget_still_valid(mm))
 		return NULL;
 	start = vma->vm_start;
 	if (expand_stack(vma, addr))
