@@ -113,7 +113,7 @@ bool irq_work_needs_cpu(void)
 
 	raised = &__get_cpu_var(raised_list);
 	lazy = &__get_cpu_var(lazy_list);
-	if (llist_empty(raised) && llist_empty(lazy))
+	if (llist_empty_relaxed(raised) && llist_empty_relaxed(lazy))
 		return false;
 
 	/* All work should have been flushed before going offline */

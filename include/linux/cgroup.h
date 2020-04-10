@@ -578,7 +578,7 @@ struct cgroup_subsys {
 	void (*css_offline)(struct cgroup *cgrp);
 	void (*css_free)(struct cgroup *cgrp);
 
-	int (*allow_attach)(struct cgroup *cgrp, struct cgroup_taskset *tset);
+	//int (*allow_attach)(struct cgroup *cgrp, struct cgroup_taskset *tset);
 	int (*can_attach)(struct cgroup *cgrp, struct cgroup_taskset *tset);
 	void (*cancel_attach)(struct cgroup *cgrp, struct cgroup_taskset *tset);
 	void (*attach)(struct cgroup *cgrp, struct cgroup_taskset *tset);
@@ -875,11 +875,11 @@ struct cgroup_subsys_state *cgroup_css_from_dir(struct file *f, int id);
  * of the calling process is the same as the moved task or because we are
  * running as root.
  * Returns 0 if this is allowed, or -EACCES otherwise.
- */
+
 int subsys_cgroup_allow_attach(struct cgroup *cgrp,
 			       struct cgroup_taskset *tset);
 
-
+ */
 #else /* !CONFIG_CGROUPS */
 
 static inline int cgroup_init_early(void) { return 0; }
