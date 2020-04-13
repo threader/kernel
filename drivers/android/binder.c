@@ -66,13 +66,15 @@
 #include <linux/debugfs.h>
 #include <linux/rbtree.h>
 #include <linux/sched.h>
+#include <linux/sched/rt.h>
 #include <linux/seq_file.h>
 #include <linux/uaccess.h>
 #include <linux/pid_namespace.h>
 #include <linux/security.h>
 #include <linux/spinlock.h>
+#include <linux/ratelimit.h>
 
-#include <uapi/linux/android/binder.h>
+#include "binder.h"
 #include "binder_alloc.h"
 #include "binder_trace.h"
 
@@ -121,6 +123,9 @@ BINDER_DEBUG_ENTRY(proc);
 
 #define BINDER_SMALL_BUF_SIZE (PAGE_SIZE * 64)
 
+//#define NICE_TO_PRIO(nice)	(MAX_RT_PRIO + (nice) + 20)
+//#define PRIO_TO_NICE(prio)	((prio) - MAX_RT_PRIO - 20)
+
 enum {
 	BINDER_DEBUG_USER_ERROR             = 1U << 0,
 	BINDER_DEBUG_FAILED_TRANSACTION     = 1U << 1,
@@ -164,13 +169,13 @@ module_param_call(stop_on_user_error, binder_set_stop_on_user_error,
 #define binder_debug(mask, x...) \
 	do { \
 		if (binder_debug_mask & mask) \
-			pr_info(x); \
+			pr_info_ratelimited(x); \
 	} while (0)
 
 #define binder_user_error(x...) \
 	do { \
 		if (binder_debug_mask & BINDER_DEBUG_USER_ERROR) \
-			pr_info(x); \
+			pr_info_ratelimited(x); \
 		if (binder_stop_on_user_error) \
 			binder_stop_on_user_error = 2; \
 	} while (0)
@@ -267,6 +272,7 @@ struct binder_context {
 
 	kuid_t binder_context_mgr_uid;
 	const char *name;
+	bool inherit_fifo_prio;
 };
 
 struct binder_device {
@@ -851,6 +857,7 @@ static void
 binder_enqueue_deferred_thread_work_ilocked(struct binder_thread *thread,
 					    struct binder_work *work)
 {
+	WARN_ON(!list_empty(&thread->waiting_thread_node));
 	binder_enqueue_work_ilocked(work, &thread->todo);
 }
 
@@ -868,6 +875,7 @@ static void
 binder_enqueue_thread_work_ilocked(struct binder_thread *thread,
 				   struct binder_work *work)
 {
+	WARN_ON(!list_empty(&thread->waiting_thread_node));
 	binder_enqueue_work_ilocked(work, &thread->todo);
 	thread->process_todo = true;
 }
@@ -1194,7 +1202,7 @@ static void binder_do_set_priority(struct task_struct *task,
 	}
 
 	if (verify && is_fair_policy(policy) && !has_cap_nice) {
-		long min_nice = rlimit_to_nice(task_rlimit(task, RLIMIT_NICE));
+		long min_nice = 20 - task_rlimit(task, RLIMIT_NICE);
 
 		if (min_nice > MAX_NICE) {
 			binder_user_error("%d RLIMIT_NICE not set\n",
@@ -1212,9 +1220,6 @@ static void binder_do_set_priority(struct task_struct *task,
 			      task->pid, desired.prio,
 			      to_kernel_prio(policy, priority));
 
-	trace_binder_set_priority(task->tgid, task->pid, task->normal_prio,
-				  to_kernel_prio(policy, priority),
-				  desired.prio);
 
 	/* Set the actual priority */
 	if (task->policy != policy || is_rt_policy(policy)) {
@@ -1247,7 +1252,8 @@ static void binder_transaction_priority(struct task_struct *task,
 					struct binder_priority node_prio,
 					bool inherit_rt)
 {
-	struct binder_priority desired_prio = t->priority;
+	bool inherit_fifo = t->buffer->target_node->proc->context->inherit_fifo_prio;
+	struct binder_priority desired_prio;
 
 	if (t->set_priority_called)
 		return;
@@ -1256,9 +1262,12 @@ static void binder_transaction_priority(struct task_struct *task,
 	t->saved_priority.sched_policy = task->policy;
 	t->saved_priority.prio = task->normal_prio;
 
-	if (!inherit_rt && is_rt_policy(desired_prio.sched_policy)) {
+	if (!inherit_rt && is_rt_policy(desired_prio.sched_policy) && !inherit_fifo) {
 		desired_prio.prio = NICE_TO_PRIO(0);
 		desired_prio.sched_policy = SCHED_NORMAL;
+	} else {
+		desired_prio.prio = t->priority.prio;
+		desired_prio.sched_policy = t->priority.sched_policy;
 	}
 
 	if (node_prio.prio < t->priority.prio ||
@@ -1429,19 +1438,12 @@ static int binder_inc_node_nilocked(struct binder_node *node, int strong,
 		} else
 			node->local_strong_refs++;
 		if (!node->has_strong_ref && target_list) {
+			struct binder_thread *thread = container_of(target_list,
+						    struct binder_thread, todo);
 			binder_dequeue_work_ilocked(&node->work);
-			/*
-			 * Note: this function is the only place where we queue
-			 * directly to a thread->todo without using the
-			 * corresponding binder_enqueue_thread_work() helper
-			 * functions; in this case it's ok to not set the
-			 * process_todo flag, since we know this node work will
-			 * always be followed by other work that starts queue
-			 * processing: in case of synchronous transactions, a
-			 * BR_REPLY or BR_ERROR; in case of oneway
-			 * transactions, a BR_TRANSACTION_COMPLETE.
-			 */
-			binder_enqueue_work_ilocked(&node->work, target_list);
+			BUG_ON(&thread->todo != target_list);
+			binder_enqueue_deferred_thread_work_ilocked(thread,
+								   &node->work);
 		}
 	} else {
 		if (!internal)
@@ -2236,8 +2238,8 @@ static size_t binder_validate_object(struct binder_buffer *buffer, u64 offset)
 
 	if (buffer->data_size < sizeof(*hdr) ||
 	    offset > buffer->data_size - sizeof(*hdr) ||
-	    !IS_ALIGNED(offset, sizeof(u32)))
-		return 0;
+ 	    !IS_ALIGNED(offset, sizeof(u32)))
+ 		return 0;
 
 	/* Ok, now see if we can read a complete object. */
 	hdr = (struct binder_object_header *)(buffer->data + offset);
@@ -2907,6 +2909,7 @@ static void binder_transaction(struct binder_proc *proc,
 {
 	int ret;
 	struct binder_transaction *t;
+	struct binder_work *w;
 	struct binder_work *tcomplete;
 	binder_size_t *offp, *off_end, *off_start;
 	binder_size_t off_min;
@@ -3049,6 +3052,29 @@ static void binder_transaction(struct binder_proc *proc,
 			goto err_invalid_target_handle;
 		}
 		binder_inner_proc_lock(proc);
+
+		w = list_first_entry_or_null(&thread->todo,
+					     struct binder_work, entry);
+		if (!(tr->flags & TF_ONE_WAY) && w &&
+		    w->type == BINDER_WORK_TRANSACTION) {
+			/*
+			 * Do not allow new outgoing transaction from a
+			 * thread that has a transaction at the head of
+			 * its todo list. Only need to check the head
+			 * because binder_select_thread_ilocked picks a
+			 * thread from proc->waiting_threads to enqueue
+			 * the transaction, and nothing is queued to the
+			 * todo list while the thread is on waiting_threads.
+			 */
+			binder_user_error("%d:%d new transaction not allowed when there is a transaction on thread todo\n",
+					  proc->pid, thread->pid);
+			binder_inner_proc_unlock(proc);
+			return_error = BR_FAILED_REPLY;
+			return_error_param = -EPROTO;
+			return_error_line = __LINE__;
+			goto err_bad_todo_list;
+		}
+
 		if (!(tr->flags & TF_ONE_WAY) && thread->transaction_stack) {
 			struct binder_transaction *tmp;
 
@@ -3235,7 +3261,7 @@ static void binder_transaction(struct binder_proc *proc,
 		goto err_bad_offset;
 	}
 	if (!IS_ALIGNED(extra_buffers_size, sizeof(u64))) {
-		binder_user_error("%d:%d got transaction with unaligned buffers size, %llu\n",
+		binder_user_error("%d:%d got transaction with unaligned buffers size, %lld\n",
 				  proc->pid, thread->pid,
 				  (u64)extra_buffers_size);
 		return_error = BR_FAILED_REPLY;
@@ -3481,6 +3507,7 @@ err_alloc_tcomplete_failed:
 	kfree(t);
 	binder_stats_deleted(BINDER_STAT_TRANSACTION);
 err_alloc_t_failed:
+err_bad_todo_list:
 err_bad_call_stack:
 err_empty_call_stack:
 err_dead_binder:
@@ -4171,7 +4198,7 @@ retry:
 			e->cmd = BR_OK;
 			ptr += sizeof(uint32_t);
 
-			binder_stat_br(proc, thread, cmd);
+			binder_stat_br(proc, thread, e->cmd);
 		} break;
 		case BINDER_WORK_TRANSACTION_COMPLETE: {
 			binder_inner_proc_unlock(proc);
@@ -4749,6 +4776,33 @@ out:
 	return ret;
 }
 
+static int binder_ioctl_set_inherit_fifo_prio(struct file *filp)
+{
+	int ret = 0;
+	struct binder_proc *proc = filp->private_data;
+	struct binder_context *context = proc->context;
+
+	kuid_t curr_euid = current_euid();
+	mutex_lock(&context->context_mgr_node_lock);
+
+	if (uid_valid(context->binder_context_mgr_uid)) {
+		if (!uid_eq(context->binder_context_mgr_uid, curr_euid)) {
+			pr_err("BINDER_SET_INHERIT_FIFO_PRIO bad uid %d != %d\n",
+			       from_kuid(&init_user_ns, curr_euid),
+			       from_kuid(&init_user_ns,
+					 context->binder_context_mgr_uid));
+			ret = -EPERM;
+			goto out;
+		}
+	}
+
+	context->inherit_fifo_prio = true;
+
+ out:
+	mutex_unlock(&context->context_mgr_node_lock);
+	return ret;
+}
+
 static int binder_ioctl_set_ctx_mgr(struct file *filp,
 				    struct flat_binder_object *fbo)
 {
@@ -4918,6 +4972,12 @@ static long binder_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		if (ret)
 			goto err;
 		break;
+	case BINDER_SET_INHERIT_FIFO_PRIO:
+		ret = binder_ioctl_set_inherit_fifo_prio(filp);
+		if (ret)
+			goto err;
+		break;
+
 	case BINDER_THREAD_EXIT:
 		binder_debug(BINDER_DEBUG_THREADS, "%d:%d exit\n",
 			     proc->pid, thread->pid);
@@ -5719,6 +5779,7 @@ static void print_binder_proc_stats(struct seq_file *m,
 
 	seq_printf(m, "proc %d\n", proc->pid);
 	seq_printf(m, "context %s\n", proc->context->name);
+	seq_printf(m, "context FIFO: %d\n", proc->context->inherit_fifo_prio);
 	count = 0;
 	ready_threads = 0;
 	binder_inner_proc_lock(proc);
@@ -5756,8 +5817,6 @@ static void print_binder_proc_stats(struct seq_file *m,
 
 	count = binder_alloc_get_allocated_count(&proc->alloc);
 	seq_printf(m, "  buffers: %d\n", count);
-
-	binder_alloc_print_pages(m, &proc->alloc);
 
 	count = 0;
 	binder_inner_proc_lock(proc);
@@ -5954,10 +6013,6 @@ static int __init binder_init(void)
 	char *device_name, *device_names, *device_tmp;
 	struct binder_device *device;
 	struct hlist_node *tmp;
-
-	//ret = binder_alloc_shrinker_init();
-	//if (ret)
-	//	return ret;
 
 	atomic_set(&binder_transaction_log.cur, ~0U);
 	atomic_set(&binder_transaction_log_failed.cur, ~0U);
