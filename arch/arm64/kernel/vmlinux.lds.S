@@ -151,16 +151,22 @@ SECTIONS
  *	reserved_ttbr0 = .;
  *	. += RESERVED_TTBR0_SIZE;
  * #endif
- *
- * #ifdef CONFIG_UNMAP_KERNEL_AT_EL0
- *	tramp_pg_dir = .;
- *	. += PAGE_SIZE;
- * #endif
  */
+   #ifdef CONFIG_UNMAP_KERNEL_AT_EL0
+ 	tramp_pg_dir = .;
+  	. += PAGE_SIZE;
+  #endif
+
 	_end = .;
 
 	STABS_DEBUG
 }
+
+
+#ifdef CONFIG_UNMAP_KERNEL_AT_EL0
+ASSERT((__entry_tramp_text_end - __entry_tramp_text_start) == PAGE_SIZE,
+	"Entry trampoline text too big")
+#endif
 
 /*
  * The HYP init code can't be more than a page long.

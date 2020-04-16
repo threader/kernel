@@ -979,8 +979,8 @@ void __init setup_cpu_features(void)
 
 	/* Set the CPU feature capabilies */
 	setup_feature_capabilities();
-	setup_cpu_hwcaps();
 	enable_errata_workarounds();
+	setup_cpu_hwcaps();
 
 	/* Advertise that we have computed the system capabilities */
 	set_sys_caps_initialised();
