@@ -582,7 +582,7 @@ bad_len:
 static int __ipa_add_hdr(struct ipa_hdr_add *hdr)
 {
 	struct ipa_hdr_entry *entry;
-	struct ipa_hdr_offset_entry *offset;
+	struct ipa_hdr_offset_entry *offset = NULL;
 	u32 bin;
 	struct ipa_hdr_tbl *htbl = &ipa_ctx->hdr_tbl;
 	int id;
