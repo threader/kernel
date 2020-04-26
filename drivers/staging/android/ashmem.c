@@ -361,8 +361,23 @@ static inline vm_flags_t calc_vm_may_flags(unsigned long prot)
 	       _calc_vm_trans(prot, PROT_EXEC,  VM_MAYEXEC);
 }
 
+static int ashmem_vmfile_mmap(struct file *file, struct vm_area_struct *vma)
+{
+	/* do not allow to mmap ashmem backing shmem file directly */
+	return -EPERM;
+}
+
+static unsigned long
+ashmem_vmfile_get_unmapped_area(struct file *file, unsigned long addr,
+				unsigned long len, unsigned long pgoff,
+				unsigned long flags)
+{
+	return current->mm->get_unmapped_area(file, addr, len, pgoff, flags);
+}
+
 static int ashmem_mmap(struct file *file, struct vm_area_struct *vma)
 {
+	static struct file_operations vmfile_fops;
 	struct ashmem_area *asma = file->private_data;
 	int ret = 0;
 
@@ -370,6 +385,12 @@ static int ashmem_mmap(struct file *file, struct vm_area_struct *vma)
 
 	/* user needs to SET_SIZE before mapping */
 	if (unlikely(!asma->size)) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	/* requested mapping size larger than object size */
+	if (vma->vm_end - vma->vm_start > PAGE_ALIGN(asma->size)) {
 		ret = -EINVAL;
 		goto out;
 	}
@@ -397,6 +418,19 @@ static int ashmem_mmap(struct file *file, struct vm_area_struct *vma)
 		}
 		vmfile->f_mode |= FMODE_LSEEK;
 		asma->file = vmfile;
+		/*
+		 * override mmap operation of the vmfile so that it can't be
+		 * remapped which would lead to creation of a new vma with no
+		 * asma permission checks. Have to override get_unmapped_area
+		 * as well to prevent VM_BUG_ON check for f_ops modification.
+		 */
+		if (!vmfile_fops.mmap) {
+			vmfile_fops = *vmfile->f_op;
+			vmfile_fops.mmap = ashmem_vmfile_mmap;
+			vmfile_fops.get_unmapped_area =
+					ashmem_vmfile_get_unmapped_area;
+		}
+		vmfile->f_op = &vmfile_fops;
 	}
 	get_file(asma->file);
 
@@ -729,6 +763,53 @@ static int ashmem_pin_unpin(struct ashmem_area *asma, unsigned long cmd,
 	return ret;
 }
 
+#ifdef CONFIG_OUTER_CACHE
+static unsigned int virtaddr_to_physaddr(unsigned int virtaddr)
+{
+	unsigned int physaddr = 0;
+	pgd_t *pgd_ptr = NULL;
+	pud_t *pud_ptr = NULL;
+	pmd_t *pmd_ptr = NULL;
+	pte_t *pte_ptr = NULL, pte;
+
+	spin_lock(&current->mm->page_table_lock);
+	pgd_ptr = pgd_offset(current->mm, virtaddr);
+	if (pgd_none(*pgd_ptr) || pgd_bad(*pgd_ptr)) {
+		pr_err("Failed to convert virtaddr %x to pgd_ptr\n",
+			virtaddr);
+		goto done;
+	}
+
+	pud_ptr = pud_offset(pgd_ptr, virtaddr);
+	if (pud_none(*pud_ptr) || pud_bad(*pud_ptr)) {
+		pr_err("Failed to convert pgd_ptr %p to pud_ptr\n",
+			(void *)pgd_ptr);
+		goto done;
+	}
+
+	pmd_ptr = pmd_offset(pud_ptr, virtaddr);
+	if (pmd_none(*pmd_ptr) || pmd_bad(*pmd_ptr)) {
+		pr_err("Failed to convert pud_ptr %p to pmd_ptr\n",
+			(void *)pud_ptr);
+		goto done;
+	}
+
+	pte_ptr = pte_offset_map(pmd_ptr, virtaddr);
+	if (!pte_ptr) {
+		pr_err("Failed to convert pmd_ptr %p to pte_ptr\n",
+			(void *)pmd_ptr);
+		goto done;
+	}
+	pte = *pte_ptr;
+	physaddr = pte_pfn(pte);
+	pte_unmap(pte_ptr);
+done:
+	spin_unlock(&current->mm->page_table_lock);
+	physaddr <<= PAGE_SHIFT;
+	return physaddr;
+}
+#endif
+
 static long ashmem_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	struct ashmem_area *asma = file->private_data;
@@ -817,6 +898,57 @@ static struct miscdevice ashmem_misc = {
 	.name = "ashmem",
 	.fops = &ashmem_fops,
 };
+
+static int is_ashmem_file(struct file *file)
+{
+	return (file->f_op == &ashmem_fops);
+}
+
+int get_ashmem_file(int fd, struct file **filp, struct file **vm_file,
+			unsigned long *len)
+{
+	int ret = -1;
+	struct file *file = fget(fd);
+	*filp = NULL;
+	*vm_file = NULL;
+	if (unlikely(file == NULL)) {
+		pr_err("ashmem: %s: requested data from file "
+			"descriptor that doesn't exist.\n", __func__);
+	} else {
+		char currtask_name[FIELD_SIZEOF(struct task_struct, comm) + 1];
+		pr_debug("filp %p rdev %d pid %u(%s) file %p(%ld)"
+			" dev id: %d\n", filp,
+			file->f_dentry->d_inode->i_rdev,
+			current->pid, get_task_comm(currtask_name, current),
+			file, file_count(file),
+			MINOR(file->f_dentry->d_inode->i_rdev));
+		if (is_ashmem_file(file)) {
+			struct ashmem_area *asma = file->private_data;
+			*filp = file;
+			*vm_file = asma->file;
+			*len = asma->size;
+			ret = 0;
+		} else {
+			pr_err("file descriptor is not an ashmem "
+				"region fd: %d\n", fd);
+			fput(file);
+		}
+	}
+	return ret;
+}
+EXPORT_SYMBOL(get_ashmem_file);
+
+void put_ashmem_file(struct file *file)
+{
+	char currtask_name[FIELD_SIZEOF(struct task_struct, comm) + 1];
+	pr_debug("rdev %d pid %u(%s) file %p(%ld)" " dev id: %d\n",
+		file->f_dentry->d_inode->i_rdev, current->pid,
+		get_task_comm(currtask_name, current), file,
+		file_count(file), MINOR(file->f_dentry->d_inode->i_rdev));
+	if (file && is_ashmem_file(file))
+		fput(file);
+}
+EXPORT_SYMBOL(put_ashmem_file);
 
 static int __init ashmem_init(void)
 {

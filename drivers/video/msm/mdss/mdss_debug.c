@@ -396,6 +396,9 @@ static ssize_t mdss_debug_base_offset_write(struct file *file,
 
 	buf[count] = 0;	/* end of string */
 
+	if (off % sizeof(u32))
+		return -EINVAL;
+
 	sscanf(buf, "%5x %x", &off, &cnt);
 
 	if (off > dbg->max_offset)

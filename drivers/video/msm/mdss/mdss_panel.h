@@ -551,6 +551,8 @@ struct mdss_mdp_pp_tear_check {
 	u32 refx100;
 };
 
+struct mdss_livedisplay_ctx;
+
 struct mdss_panel_info {
 	u32 xres;
 	u32 yres;
@@ -677,6 +679,10 @@ struct mdss_panel_info {
 	__u32 width;
 	__u32 height;
 #endif
+
+
+	struct mdss_livedisplay_ctx *livedisplay;
+
 };
 
 /**
@@ -732,6 +738,7 @@ struct mdss_panel_timing {
 	u32 compression_mode;
 
 	struct mdss_mdp_pp_tear_check te;
+
 };
 
 struct mdss_panel_data {
