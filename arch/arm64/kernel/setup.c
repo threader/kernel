@@ -269,7 +269,7 @@ static void __init setup_processor(void)
 	on_each_cpu(enable_psci_bp_hardening, NULL, true);
 	sys_psci_bp_hardening_initialised = true;
 #endif
-/
+*/
 	/*
 	 * Check for sane CTR_EL0.CWG value.
 	 */
@@ -601,6 +601,9 @@ static int c_show(struct seq_file *m, void *v)
 #ifdef CONFIG_SMP
 		seq_printf(m, "processor\t: %d\n", i);
 #endif
+		seq_printf(m, "BogoMIPS\t: %lu.%02lu\n",
+			   loops_per_jiffy / (500000UL/HZ),
+			   loops_per_jiffy / (5000UL/HZ) % 100);
 
 		/*
 		 * Dump out the common processor features in a single line.
