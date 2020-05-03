@@ -1123,6 +1123,7 @@ static int mdss_fb_probe(struct platform_device *pdev)
 #endif
 
 	mutex_init(&mfd->bl_lock);
+	mutex_init(&mfd->mdss_sysfs_lock);
 	mutex_init(&mfd->switch_lock);
 
 	fbi_list[fbi_list_index++] = fbi;
