@@ -404,7 +404,8 @@ int __inode_permission2(struct vfsmount *mnt, struct inode *inode, int mask)
 	if (retval)
 		return retval;
 
-	return security_inode_permission(inode, mask);
+	retval = security_inode_permission(inode, mask);
+	return retval;
 }
 EXPORT_SYMBOL(__inode_permission2);
 
@@ -2363,6 +2364,7 @@ int vfs_create2(struct vfsmount *mnt, struct inode *dir, struct dentry *dentry,
 		return error;
 	if (!error)
 		fsnotify_create(dir, dentry);
+
 	return error;
 }
 EXPORT_SYMBOL(vfs_create2);
@@ -3239,9 +3241,10 @@ int vfs_mknod2(struct vfsmount *mnt, struct inode *dir, struct dentry *dentry, u
 	if (error)
 		return error;
 
-	fsnotify_create(dir, dentry);
+	if (!error)
+		fsnotify_create(dir, dentry);
 
-	return 0;
+	return error;
 }
 EXPORT_SYMBOL(vfs_mknod2);
 
