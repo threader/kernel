@@ -242,6 +242,7 @@ static int propagate_one(struct mount *m)
 	child = copy_tree(last_source, last_source->mnt.mnt_root, type);
 	if (IS_ERR(child))
 		return PTR_ERR(child);
+	child->mnt.mnt_flags &= ~MNT_LOCKED;
 	mnt_set_mountpoint(m, mp, child);
 	last_dest = m;
 	last_source = child;
@@ -374,12 +375,16 @@ static void __propagate_umount(struct mount *mnt)
 
 	for (m = propagation_next(parent, parent); m;
 			m = propagation_next(m, parent)) {
-		child = __lookup_mnt(&m->mnt, mnt->mnt_mountpoint, 0);
-		if (child)
-			child->mnt.mnt_flags &= ~MNT_LOCKED;
+		struct mount *child = __lookup_mnt(&m->mnt,
+					mnt->mnt_mountpoint, 0);
+	
+		 * umount the child only if the child has no
+		 * other children
+
+		if (child && list_empty(&child->mnt_mounts))
+			list_move_tail(&child->mnt_hash, &mnt->mnt_hash);
 	}
 }
-
 /*
  * collect all mounts that receive propagation from the mount in @list,
  * and return these additional mounts in the same list.
