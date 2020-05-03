@@ -2093,7 +2093,7 @@ static int mdss_fb_blank(int blank_mode, struct fb_info *info)
 			mfd->index, ret);
 		return ret;
 	}
-
+	mutex_lock(&mfd->mdss_sysfs_lock);
 	if (mfd->op_enable == 0) {
 		if (blank_mode == FB_BLANK_UNBLANK)
 			mfd->suspend.panel_power_state = MDSS_PANEL_POWER_ON;
@@ -2103,7 +2103,8 @@ static int mdss_fb_blank(int blank_mode, struct fb_info *info)
 			mfd->suspend.panel_power_state = MDSS_PANEL_POWER_LP1;
 		else
 			mfd->suspend.panel_power_state = MDSS_PANEL_POWER_OFF;
-		return 0;
+		ret = 0;
+		goto end;
 	}
 	pr_debug("mode: %d\n", blank_mode);
 
@@ -2117,7 +2118,11 @@ static int mdss_fb_blank(int blank_mode, struct fb_info *info)
 		pdata->panel_info.is_lpm_mode = false;
 	}
 
-	return mdss_fb_blank_sub(blank_mode, info, mfd->op_enable);
+	ret = mdss_fb_blank_sub(blank_mode, info, mfd->op_enable);
+
+end:
+	mutex_unlock(&mfd->mdss_sysfs_lock);
+	return ret;
 }
 
 static inline int mdss_fb_create_ion_client(struct msm_fb_data_type *mfd)
@@ -4086,8 +4091,6 @@ static int mdss_fb_handle_buf_sync_ioctl(struct msm_sync_pt_data *sync_pt_data,
 		goto buf_sync_err_2;
 	}
 
-	sync_fence_install(rel_fence, rel_fen_fd);
-
 	ret = copy_to_user(buf_sync->rel_fen_fd, &rel_fen_fd, sizeof(int));
 	if (ret) {
 		pr_err("%s: copy_to_user failed\n", sync_pt_data->fence_name);
@@ -4124,8 +4127,6 @@ static int mdss_fb_handle_buf_sync_ioctl(struct msm_sync_pt_data *sync_pt_data,
 		goto buf_sync_err_3;
 	}
 
-	sync_fence_install(retire_fence, retire_fen_fd);
-
 	ret = copy_to_user(buf_sync->retire_fen_fd, &retire_fen_fd,
 			sizeof(int));
 	if (ret) {
@@ -4136,7 +4137,10 @@ static int mdss_fb_handle_buf_sync_ioctl(struct msm_sync_pt_data *sync_pt_data,
 		goto buf_sync_err_3;
 	}
 
+	sync_fence_install(retire_fence, retire_fen_fd);
+
 skip_retire_fence:
+	sync_fence_install(rel_fence, rel_fen_fd);
 	mutex_unlock(&sync_pt_data->sync_mutex);
 
 	if (buf_sync->flags & MDP_BUF_SYNC_FLAG_WAIT)
