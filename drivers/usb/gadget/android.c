@@ -3703,6 +3703,7 @@ android_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *c)
 	spin_unlock_irqrestore(&cdev->lock, flags);
 	if (do_work)
 		schedule_work(&dev->work);
+
 	return value;
 }
 
