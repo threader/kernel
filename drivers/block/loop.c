@@ -1515,10 +1515,11 @@ static void __lo_release(struct loop_device *lo)
 {
 	int err;
 
-	if (atomic_dec_return(&lo->lo_refcnt))
-		return;
-
 	mutex_lock(&lo->lo_ctl_mutex);
+
+	if (--lo->lo_refcnt)
+		goto out;
+
 	if (lo->lo_flags & LO_FLAGS_AUTOCLEAR) {
 		/*
 		 * In autoclear mode, stop the loop thread
@@ -1535,6 +1536,7 @@ static void __lo_release(struct loop_device *lo)
 		loop_flush(lo);
 	}
 
+out:
 	mutex_unlock(&lo->lo_ctl_mutex);
 }
 

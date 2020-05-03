@@ -100,6 +100,7 @@ struct vm_area_struct;
  * This may seem redundant, but it's a way of annotating false positives vs.
  * allocations that simply cannot be supported (e.g. page tables).
  */
+#define __GFP_DIRECT_RECLAIM	((__force gfp_t)___GFP_NO_KSWAPD) /* Caller can reclaim */
 #define __GFP_NOTRACK_FALSE_POSITIVE (__GFP_NOTRACK)
 
 #define __GFP_BITS_SHIFT 26	/* Room for N __GFP_FOO bits */
@@ -173,6 +174,10 @@ static inline int allocflags_to_migratetype(gfp_t gfp_flags)
 		(((gfp_flags & __GFP_CMA) != 0) << 1) |
 		((gfp_flags & __GFP_RECLAIMABLE) != 0);
 #endif
+}
+static inline bool gfpflags_allow_blocking(const gfp_t gfp_flags)
+{
+	return (bool __force)(gfp_flags & __GFP_DIRECT_RECLAIM);
 }
 
 #ifdef CONFIG_HIGHMEM
