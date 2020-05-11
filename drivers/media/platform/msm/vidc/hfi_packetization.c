@@ -214,7 +214,7 @@ enum hal_video_codec vidc_get_hal_codec(u32 hfi_codec)
 }
 
 
-inline u32 vidc_get_hfi_domain(enum hal_domain hal_domain)
+u32 vidc_get_hfi_domain(enum hal_domain hal_domain)
 {
 	u32 hfi_domain;
 
@@ -237,7 +237,7 @@ inline u32 vidc_get_hfi_domain(enum hal_domain hal_domain)
 	return hfi_domain;
 }
 
-u32 vidc_get_hfi_codec(enum hal_video_codec hal_codec)
+inline u32 vidc_get_hfi_codec(enum hal_video_codec hal_codec)
 {
 	u32 hfi_codec = 0;
 
