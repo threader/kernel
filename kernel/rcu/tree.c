@@ -2473,9 +2473,9 @@ static void __call_rcu_core(struct rcu_state *rsp, struct rcu_data *rdp,
 	if (unlikely(rdp->qlen > rdp->qlen_last_fqs_check + qhimark)) {
 
 		/* Are we ignoring a completed grace period? */
-//		note_gp_changes(rsp, rdp);
+		note_gp_changes(rsp, rdp);
 
-		check_for_new_grace_period(rsp, rdp);
+//		check_for_new_grace_period(rsp, rdp);
 
 		/* Start a new grace period if one not already started. */
 		if (!rcu_gp_in_progress(rsp)) {
