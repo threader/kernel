@@ -874,8 +874,14 @@ static int snd_compress_simple_ioctls(struct file *file,
 	case _IOC_NR(SNDRV_COMPRESS_PARTIAL_DRAIN):
 		retval = snd_compr_partial_drain(stream);
 		break;
+
+	default:
+		mutex_unlock(&stream->device->lock);
+		return snd_compress_simple_ioctls(file, stream, cmd, arg);
+
 	}
 
+	mutex_unlock(&stream->device->lock);
 	return retval;
 }
 

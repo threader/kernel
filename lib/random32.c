@@ -39,6 +39,8 @@
 #include <linux/sched.h>
 #include <asm/unaligned.h>
 
+#include <linux/timer.h>
+
 #ifdef CONFIG_RANDOM32_SELFTEST
 static void __init prandom_state_selftest(void);
 #else
@@ -262,6 +264,11 @@ static void __prandom_reseed(bool late)
 	if (!spin_trylock_irqsave(&lock, flags))
 		return;
 
+//	if (latch && !late)
+//		goto out;
+
+	/* only allow initial seeding (late == false) once */
+	spin_lock_irqsave(&lock, flags);
 	if (latch && !late)
 		goto out;
 

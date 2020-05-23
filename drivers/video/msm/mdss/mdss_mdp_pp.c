@@ -564,6 +564,7 @@ static inline void mdss_mdp_pp_get_dcm_state(struct mdss_mdp_pipe *pipe,
 		*dcm_state = pipe->mixer_left->ctl->mfd->dcm_state;
 }
 
+<<<<<<< HEAD
 static inline bool pp_is_pa_v1_7(void)
 {
 	struct mdss_data_type *mdata;
@@ -577,7 +578,7 @@ static inline bool pp_is_pa_v1_7(void)
 
 }
 
-inline int linear_map(int in, int *out, int in_max, int out_max)
+static inline int linear_map(int in, int *out, int in_max, int out_max)
 {
 	if (in < 0 || !out || in_max <= 0 || out_max <= 0)
 		return -EINVAL;

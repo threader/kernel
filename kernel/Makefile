@@ -1,16 +1,32 @@
 #
 # Makefile for the linux kernel.
 #
+CFLAGS_fork.o := -fno-unsafe-math-optimizations -fno-strict-aliasing
+CFLAGS_exit.o := -fno-unsafe-math-optimizations -fno-strict-aliasing
+CFLAGS_sysctl_binary.o := -fno-unsafe-math-optimizations -fno-strict-aliasing
+CFLAGS_sysctl.o := -fno-unsafe-math-optimizations -fno-strict-aliasing
+CFLAGS_pid.o := -fno-unsafe-math-optimizations -fno-strict-aliasing
+CFLAGS_signal.o := -fno-unsafe-math-optimizations -fno-strict-aliasing
+CFLAGS_workqueue.o := -fno-unsafe-math-optimizations -fno-strict-aliasing
+CFLAGS_cred.o := -fno-unsafe-math-optimizations -fno-strict-aliasing
+CFLAGS_nsproxy.o := -fno-unsafe-math-optimizations -fno-strict-aliasing
+CFLAGS_audit.o := -fno-unsafe-math-optimizations -fno-strict-aliasing
+CFLAGS_auditfilter.o := -fno-unsafe-math-optimizations -fno-strict-aliasing
+CFLAGS_cgroup.o := -fno-unsafe-math-optimizations -fno-strict-aliasing
+CFLAGS_audit.o := -Wno-tautological-compare
 
 obj-y     = fork.o exec_domain.o panic.o printk.o \
 	    cpu.o exit.o itimer.o time.o softirq.o resource.o \
 	    sysctl.o sysctl_binary.o capability.o ptrace.o timer.o user.o \
 	    signal.o sys.o kmod.o workqueue.o pid.o task_work.o \
 	    extable.o params.o posix-timers.o \
-	    kthread.o sys_ni.o posix-cpu-timers.o \
-	    hrtimer.o nsproxy.o \
+	    kthread.o wait.o sys_ni.o posix-cpu-timers.o mutex.o \
+	    hrtimer.o rwsem.o nsproxy.o semaphore.o \
 	    notifier.o ksysfs.o cred.o \
 	    async.o range.o groups.o smpboot.o
+
+#	    kthread.o sys_ni.o posix-cpu-timers.o \
+#	    hrtimer.o nsproxy.o \
 
 ifdef CONFIG_FUNCTION_TRACER
 # Do not trace debug files and internal ftrace files
