@@ -715,6 +715,7 @@ static int audit_receive_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 				if (err)
 					break;
 			}
+			mutex_unlock(&audit_cmd_mutex);
 			audit_log_common_recv_msg(&ab, msg_type);
 			if (msg_type != AUDIT_USER_TTY)
 				audit_log_format(ab, " msg='%.1024s'",
@@ -731,6 +732,7 @@ static int audit_receive_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 			}
 			audit_set_pid(ab, NETLINK_CB(skb).portid);
 			audit_log_end(ab);
+			mutex_lock(&audit_cmd_mutex);
 		}
 		break;
 	case AUDIT_ADD_RULE:
@@ -1055,7 +1057,7 @@ static inline void audit_get_stamp(struct audit_context *ctx,
 /*
  * Wait for auditd to drain the queue a little
  */
-static void wait_for_auditd(unsigned long sleep_time)
+static long wait_for_auditd(long sleep_time)
 {
 	DECLARE_WAITQUEUE(wait, current);
 	set_current_state(TASK_UNINTERRUPTIBLE);
@@ -1063,10 +1065,12 @@ static void wait_for_auditd(unsigned long sleep_time)
 
 	if (audit_backlog_limit &&
 	    skb_queue_len(&audit_skb_queue) > audit_backlog_limit)
-		schedule_timeout(sleep_time);
+		sleep_time = schedule_timeout(sleep_time);
 
 	__set_current_state(TASK_RUNNING);
 	remove_wait_queue(&audit_backlog_wait, &wait);
+
+	return sleep_time;
 }
 
 /* Obtain an audit buffer.  This routine does locking to obtain the
@@ -1097,7 +1101,8 @@ struct audit_buffer *audit_log_start(struct audit_context *ctx, gfp_t gfp_mask,
 	struct audit_buffer	*ab	= NULL;
 	struct timespec		t;
 	unsigned int		uninitialized_var(serial);
-	int reserve;
+	int reserve = 5; /* Allow atomic callers to go up to five
+			    entries over the normal backlog limit */
 	unsigned long timeout_start = jiffies;
 
 	if (audit_initialized != AUDIT_INITIALIZED)
@@ -1318,14 +1323,14 @@ void audit_log_n_string(struct audit_buffer *ab, const char *string,
  * @string: string to be checked
  * @len: max length of the string to check
  */
-int audit_string_contains_control(const char *string, size_t len)
+bool audit_string_contains_control(const char *string, size_t len)
 {
 	const unsigned char *p;
 	for (p = string; p < (const unsigned char *)string + len; p++) {
 		if (*p == '"' || *p < 0x21 || *p > 0x7e)
-			return 1;
+			return true;
 	}
-	return 0;
+	return false;
 }
 
 /**
@@ -1390,10 +1395,10 @@ void audit_log_d_path(struct audit_buffer *ab, const char *prefix,
 
 void audit_log_session_info(struct audit_buffer *ab)
 {
-	u32 sessionid = audit_get_sessionid(current);
+	unsigned int sessionid = audit_get_sessionid(current);
 	uid_t auid = from_kuid(&init_user_ns, audit_get_loginuid(current));
 
-	audit_log_format(ab, " auid=%u ses=%u\n", auid, sessionid);
+	audit_log_format(ab, " auid=%u ses=%u", auid, sessionid);
 }
 
 void audit_log_key(struct audit_buffer *ab, char *key)
@@ -1416,7 +1421,7 @@ void audit_log_cap(struct audit_buffer *ab, char *prefix, kernel_cap_t *cap)
 	}
 }
 
-void audit_log_fcaps(struct audit_buffer *ab, struct audit_names *name)
+static void audit_log_fcaps(struct audit_buffer *ab, struct audit_names *name)
 {
 	kernel_cap_t *perm = &name->fcap.permitted;
 	kernel_cap_t *inh = &name->fcap.inheritable;
@@ -1645,7 +1650,7 @@ EXPORT_SYMBOL(audit_log_task_info);
 
 /**
  * audit_log_link_denied - report a link restriction denial
- * @operation: specific link opreation
+ * @operation: specific link operation
  * @link: the path that triggered the restriction
  */
 void audit_log_link_denied(const char *operation, struct path *link)
