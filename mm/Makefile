@@ -73,3 +73,4 @@ obj-$(CONFIG_MEMTEST)		+= memtest.o
 obj-$(CONFIG_PROCESS_RECLAIM)	+= process_reclaim.o
 obj-$(CONFIG_ZSMALLOC)	+= zsmalloc.o
 obj-$(CONFIG_HARDENED_USERCOPY) += usercopy.o
+obj-$(CONFIG_ZPOOL)	+= zpool.o
