@@ -186,12 +186,74 @@ static void ext4_finish_bio(struct bio *bio)
 	}
 }
 
+/*
+ * Print an buffer I/O error compatible with the fs/buffer.c.  This
+ * provides compatibility with dmesg scrapers that look for a specific
+ * buffer I/O error message.  We really need a unified error reporting
+ * structure to userspace ala Digital Unix's uerf system, but it's
+ * probably not going to happen in my lifetime, due to LKML politics...
+ */
+static void buffer_io_error(struct buffer_head *bh)
+{
+	char b[BDEVNAME_SIZE];
+	printk_ratelimited(KERN_ERR "Buffer I/O error on device %s, logical block %llu\n",
+			bdevname(bh->b_bdev, b),
+			(unsigned long long)bh->b_blocknr);
+}
+
+static void ext4_finish_bio(struct bio *bio)
+{
+	int i;
+	int error = !test_bit(BIO_UPTODATE, &bio->bi_flags);
+	struct bio_vec *bvec;
+
+	bio_for_each_segment_all(bvec, bio, i) {
+		struct page *page = bvec->bv_page;
+		struct buffer_head *bh, *head;
+		unsigned bio_start = bvec->bv_offset;
+		unsigned bio_end = bio_start + bvec->bv_len;
+		unsigned under_io = 0;
+		unsigned long flags;
+
+		if (!page)
+			continue;
+
+		if (error) {
+			SetPageError(page);
+			set_bit(AS_EIO, &page->mapping->flags);
+		}
+		bh = head = page_buffers(page);
+		/*
+		 * We check all buffers in the page under BH_Uptodate_Lock
+		 * to avoid races with other end io clearing async_write flags
+		 */
+		local_irq_save(flags);
+		bit_spin_lock(BH_Uptodate_Lock, &head->b_state);
+		do {
+			if (bh_offset(bh) < bio_start ||
+			    bh_offset(bh) + bh->b_size > bio_end) {
+				if (buffer_async_write(bh))
+					under_io++;
+				continue;
+			}
+			clear_buffer_async_write(bh);
+			if (error)
+				buffer_io_error(bh);
+		} while ((bh = bh->b_this_page) != head);
+		bit_spin_unlock(BH_Uptodate_Lock, &head->b_state);
+		local_irq_restore(flags);
+		if (!under_io)
+			end_page_writeback(page);
+	}
+}
+
 static void ext4_release_io_end(ext4_io_end_t *io_end)
 {
 	struct bio *bio, *next_bio;
 
 	BUG_ON(!list_empty(&io_end->list));
 	BUG_ON(io_end->flag & EXT4_IO_END_UNWRITTEN);
+
 	WARN_ON(io_end->handle);
 
 	if (atomic_dec_and_test(&EXT4_I(io_end->inode)->i_ioend_count))
@@ -207,6 +269,16 @@ static void ext4_release_io_end(ext4_io_end_t *io_end)
 	if (io_end->iocb)
 		aio_complete(io_end->iocb, io_end->result, 0);
 	kmem_cache_free(io_end_cachep, io_end);
+}
+
+static void ext4_clear_io_unwritten_flag(ext4_io_end_t *io_end)
+{
+	struct inode *inode = io_end->inode;
+
+	io_end->flag &= ~EXT4_IO_END_UNWRITTEN;
+	/* Wake up anyone waiting on unwritten extent conversion */
+	if (atomic_dec_and_test(&EXT4_I(inode)->i_unwritten))
+		wake_up_all(ext4_ioend_wq(inode));
 }
 
 static void ext4_clear_io_unwritten_flag(ext4_io_end_t *io_end)
