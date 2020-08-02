@@ -1171,18 +1171,6 @@ static void bam2bam_data_connect_work(struct work_struct *w)
 	bam_data_start_rx_transfers(d, port);
 	bam_data_start_endless_tx(port);
 
-	/* Register for peer reset callback if USB_GADGET_XPORT_BAM2BAM */
-	if (d->trans != USB_GADGET_XPORT_BAM2BAM_IPA) {
-		usb_bam_register_peer_reset_cb(bam_data_peer_reset_cb, port);
-
-		ret = usb_bam_client_ready(true);
-		if (ret) {
-			pr_err("%s: usb_bam_client_ready failed: err:%d\n",
-			__func__, ret);
-			return;
-		}
-	}
-
 	pr_debug("Connect workqueue done (port %pK)", port);
 	return;
 
