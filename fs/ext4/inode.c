@@ -1393,8 +1393,24 @@ static void ext4_da_page_release_reservation(struct page *page,
  * Delayed allocation stuff
  */
 
-static void ext4_da_block_invalidatepages(struct mpage_da_data *mpd);
+struct mpage_da_data {
+	struct inode *inode;
+	struct writeback_control *wbc;
 
+	pgoff_t first_page;	/* The first page to write */
+	pgoff_t next_page;	/* Current page to examine */
+	pgoff_t last_page;	/* Last page to examine */
+	/*
+	 * Extent to map - this can be after first_page because that can be
+	 * fully mapped. We somewhat abuse m_flags to store whether the extent
+	 * is delalloc or unwritten.
+	 */
+	struct ext4_map_blocks map;
+	struct ext4_io_submit io_submit;	/* IO submission data */
+};
+
+static void ext4_da_block_invalidatepages(struct mpage_da_data *mpd);
+#if 0 
 /*
  * mpage_da_submit_io - walks through extent of pages and try to write
  * them with writepage() call back
@@ -1520,7 +1536,7 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd,
 	ext4_put_io_end_defer(io_submit.io_end);
 	return ret;
 }
-
+#endif 
 static void mpage_release_unused_pages(struct mpage_da_data *mpd,
 				       bool invalidate)
 {
