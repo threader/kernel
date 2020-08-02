@@ -159,26 +159,6 @@ static void ext4_clear_io_unwritten_flag(ext4_io_end_t *io_end)
 		wake_up_all(ext4_ioend_wq(inode));
 }
 
-static void ext4_clear_io_unwritten_flag(ext4_io_end_t *io_end)
-{
-	struct inode *inode = io_end->inode;
-
-	io_end->flag &= ~EXT4_IO_END_UNWRITTEN;
-	/* Wake up anyone waiting on unwritten extent conversion */
-	if (atomic_dec_and_test(&EXT4_I(inode)->i_unwritten))
-		wake_up_all(ext4_ioend_wq(inode));
-}
-
-static void ext4_clear_io_unwritten_flag(ext4_io_end_t *io_end)
-{
-	struct inode *inode = io_end->inode;
-
-	io_end->flag &= ~EXT4_IO_END_UNWRITTEN;
-	/* Wake up anyone waiting on unwritten extent conversion */
-	if (atomic_dec_and_test(&EXT4_I(inode)->i_unwritten))
-		wake_up_all(ext4_ioend_wq(inode));
-}
-
 /*
  * Check a range of space and convert unwritten extents to written. Note that
  * we are protected from truncate touching same part of extent tree by the
@@ -320,8 +300,10 @@ int ext4_put_io_end(ext4_io_end_t *io_end)
 
 	if (atomic_dec_and_test(&io_end->count)) {
 		if (io_end->flag & EXT4_IO_END_UNWRITTEN) {
-			err = ext4_convert_unwritten_extents(io_end->inode,
-						io_end->offset, io_end->size);
+			err = ext4_convert_unwritten_extents(io_end->handle,
+						io_end->inode, io_end->offset,
+						io_end->size);
+			io_end->handle = NULL;
 			ext4_clear_io_unwritten_flag(io_end);
 		}
 		ext4_release_io_end(io_end);
@@ -418,6 +400,7 @@ static int io_submit_add_bh(struct ext4_io_submit *io,
 			    struct inode *inode,
 			    struct buffer_head *bh)
 {
+	ext4_io_end_t *io_end;
 	int ret;
 
 	if (io->io_bio && bh->b_blocknr != io->io_next_block) {

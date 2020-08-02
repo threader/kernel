@@ -1389,13 +1389,6 @@ static int arch_random_refill(void)
 
 	if (n) {
 		unsigned int rand_bytes = n * sizeof(unsigned long);
-		if (n == 0) {
-			if (nonblock) {
-				retval = -EAGAIN;
-				break;
-			}
-// >>>>>>> d61fec41f94d... BACKPORT: random: introduce getrandom(2) system call
-
 		mix_pool_bytes(&input_pool, buf, rand_bytes);
 		credit_entropy_bits(&input_pool, rand_bytes*4);
 	}

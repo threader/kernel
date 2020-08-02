@@ -1353,7 +1353,9 @@ static bool __note_gp_changes(struct rcu_state *rsp, struct rcu_node *rnp,
 			      struct rcu_data *rdp)
 {
 	bool ret;
-
+	/* Handle the ends of any preceding grace periods first. 
+	__rcu_process_gp_end(rsp, rnp, rdp);
+	*/
 	/* Handle the ends of any preceding grace periods first. */
 	if (rdp->completed == rnp->completed) {
 
@@ -1383,32 +1385,6 @@ static bool __note_gp_changes(struct rcu_state *rsp, struct rcu_node *rnp,
 		zero_cpu_stall_ticks(rdp);
 	}
 	return ret;
-}
-
-/*
- * Update CPU-local rcu_data state to record the newly noticed grace period.
- * This is used both when we started the grace period and when we notice
- * that someone else started the grace period.  The caller must hold the
- * ->lock of the leaf rcu_node structure corresponding to the current CPU,
- *  and must have irqs disabled.
- */
-static void __note_gp_changes(struct rcu_state *rsp, struct rcu_node *rnp, struct rcu_data *rdp)
-{
-	/* Handle the ends of any preceding grace periods first. */
-	__rcu_process_gp_end(rsp, rnp, rdp);
-
-	if (rdp->gpnum != rnp->gpnum) {
-		/*
-		 * If the current grace period is waiting for this CPU,
-		 * set up to detect a quiescent state, otherwise don't
-		 * go looking for one.
-		 */
-		rdp->gpnum = rnp->gpnum;
-		trace_rcu_grace_period(rsp->name, rdp->gpnum, "cpustart");
-		rdp->passed_quiesce = 0;
-		rdp->qs_pending = !!(rnp->qsmask & rdp->grpmask);
-		zero_cpu_stall_ticks(rdp);
-	}
 }
 
 static void note_gp_changes(struct rcu_state *rsp, struct rcu_data *rdp)
@@ -1458,6 +1434,7 @@ rcu_process_gp_end(struct rcu_state *rsp, struct rcu_data *rdp)
 
 }
 
+/*
  * Do per-CPU grace-period initialization for running CPU.  The caller
  * must hold the lock of the leaf rcu_node structure corresponding to
  * this CPU.

@@ -1503,7 +1503,7 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd,
 
 			clear_page_dirty_for_io(page);
 			err = ext4_bio_write_page(&io_submit, page, len,
-						  mpd->wbc);
+						  mpd->wbc, false);
 			if (!err)
 				mpd->pages_written++;
 			/*
@@ -1972,7 +1972,7 @@ static int ext4_writepage(struct page *page,
 		unlock_page(page);
 		return -ENOMEM;
 	}
-	ret = ext4_bio_write_page(&io_submit, page, len, wbc);
+	ret = ext4_bio_write_page(&io_submit, page, len, wbc, keep_towrite);
 	ext4_io_submit(&io_submit);
 	/* Drop io_end reference we got from init */
 	ext4_put_io_end_defer(io_submit.io_end);
@@ -3147,8 +3147,10 @@ static int ext4_get_block_write_nolock(struct inode *inode, sector_t iblock,
 }
 
 static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,
-			    ssize_t size, void *private)
+			    ssize_t size, void *private, int ret,
+			    bool is_async)
 {
+	struct inode *inode = file_inode(iocb->ki_filp);
         ext4_io_end_t *io_end = iocb->private;
 
 	/* if not async direct IO just return */
