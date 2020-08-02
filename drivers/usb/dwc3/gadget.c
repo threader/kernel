@@ -2641,9 +2641,9 @@ static int dwc3_cleanup_done_reqs(struct dwc3 *dwc, struct dwc3_ep *dep,
 		 * receive 4K but we receive only 2K, we assume that's all we
 		 * should receive and we simply bounce the request back to the
 		 * gadget driver for further processing.
-		 */
-		req->request.actual += req->request.length - count;
 
+		req->request.actual += req->request.length - count;
+		 */
 		dwc3_gadget_giveback(dep, req, status);
 
 		/* EP possibly disabled during giveback? */

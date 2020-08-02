@@ -392,7 +392,7 @@ static void ipa_del_dflt_wan_rt_tables(void)
 int copy_ul_filter_rule_to_ipa(struct ipa_install_fltr_rule_req_msg_v01
 		*rule_req, uint32_t *rule_hdl)
 {
-	int i, j;
+	int rc = 0, i, j;
 
 	/* prevent multi-threads accessing num_q6_rule */
 	mutex_lock(&add_mux_channel_lock);

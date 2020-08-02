@@ -1442,7 +1442,7 @@ static int msm_rpm_dev_probe(struct platform_device *pdev)
 
 	spin_lock_init(&msm_rpm_data.smd_lock_write);
 	spin_lock_init(&msm_rpm_data.smd_lock_read);
-	INIT_WORK(&msm_rpm_data.work, msm_rpm_smd_work);
+	
 
 	wait_for_completion(&msm_rpm_data.smd_open);
 
