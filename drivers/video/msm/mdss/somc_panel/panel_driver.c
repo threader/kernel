@@ -36,7 +36,7 @@
 #include "../mdss_mdp.h"
 #include "../mdss_dsi.h"
 #include "somc_panels.h"
-#include "mdss_livedisplay.h"
+#include "../mdss_livedisplay.h"
 
 #define DT_CMD_HDR 		  6
 #define MIN_REFRESH_RATE	  48

@@ -682,9 +682,6 @@ struct mdss_panel_info {
 	__u32 height;
 #endif
 
-
-	struct mdss_livedisplay_ctx *livedisplay;
-
 };
 
 /**
