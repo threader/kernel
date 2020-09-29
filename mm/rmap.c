@@ -512,7 +512,7 @@ void page_unlock_anon_vma_read(struct anon_vma *anon_vma)
 {
 	anon_vma_unlock_read(anon_vma);
 }
-
+#if 0
 /*
  * At what user virtual address is page expected in @vma?
  */
@@ -537,7 +537,7 @@ static vma_address(struct page *page, struct vm_area_struct *vma)
 
 	return address;
 }
-
+#endif
 /*
  * At what user virtual address is page expected in vma?
  * Caller should check the page is actually part of the vma.

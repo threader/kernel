@@ -314,6 +314,38 @@ static inline struct page *read_mapping_page(struct address_space *mapping,
 }
 
 /*
+ * Get index of the page with in radix-tree
+ * (TODO: remove once hugetlb pages will have ->index in PAGE_SIZE)
+ */
+static inline pgoff_t page_to_index(struct page *page)
+{
+	pgoff_t pgoff;
+
+	if (likely(!PageTransTail(page)))
+		return page->index;
+
+	/*
+	 *  We don't initialize ->index for tail pages: calculate based on
+	 *  head page
+	 */
+	pgoff = compound_head(page)->index;
+	pgoff += page - compound_head(page);
+	return pgoff;
+}
+
+/*
+ * Get the offset in PAGE_SIZE.
+ * (TODO: hugepage should have ->index in PAGE_SIZE)
+ */
+static inline pgoff_t page_to_pgoff(struct page *page)
+{
+	if (unlikely(PageHeadHuge(page)))
+		return page->index << compound_order(page);
+
+	return page_to_index(page);
+}
+
+/*
  * Return byte-offset into filesystem object for page.
  */
 static inline loff_t page_offset(struct page *page)
