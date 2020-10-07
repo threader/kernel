@@ -131,7 +131,6 @@ static void ext4_release_io_end(ext4_io_end_t *io_end)
 
 	BUG_ON(!list_empty(&io_end->list));
 	BUG_ON(io_end->flag & EXT4_IO_END_UNWRITTEN);
-
 	WARN_ON(io_end->handle);
 
 	if (atomic_dec_and_test(&EXT4_I(io_end->inode)->i_ioend_count))
@@ -142,10 +141,6 @@ static void ext4_release_io_end(ext4_io_end_t *io_end)
 		ext4_finish_bio(bio);
 		bio_put(bio);
 	}
-	if (io_end->flag & EXT4_IO_END_DIRECT)
-		inode_dio_done(io_end->inode);
-	if (io_end->iocb)
-		aio_complete(io_end->iocb, io_end->result, 0);
 	kmem_cache_free(io_end_cachep, io_end);
 }
 
@@ -317,6 +312,7 @@ ext4_io_end_t *ext4_get_io_end(ext4_io_end_t *io_end)
 	return io_end;
 }
 
+/* BIO completion function for page writeback */
 static void ext4_end_bio(struct bio *bio, int error)
 {
 	ext4_io_end_t *io_end = bio->bi_private;
@@ -327,22 +323,10 @@ static void ext4_end_bio(struct bio *bio, int error)
 	if (test_bit(BIO_UPTODATE, &bio->bi_flags))
 		error = 0;
 
-	if (io_end->flag & EXT4_IO_END_UNWRITTEN) {
-		/*
-		 * Link bio into list hanging from io_end. We have to do it
-		 * atomically as bio completions can be racing against each
-		 * other.
-		 */
-		bio->bi_private = xchg(&io_end->bio, bio);
-	} else {
-		ext4_finish_bio(bio);
-		bio_put(bio);
-	}
-
 	if (error) {
 		struct inode *inode = io_end->inode;
 
-		ext4_warning(inode->i_sb, "I/O error writing to inode %lu "
+		ext4_warning(inode->i_sb, "I/O error %d writing to inode %lu "
 			     "(offset %llu size %ld starting block %llu)",
 			     error, inode->i_ino,
 			     (unsigned long long) io_end->offset,
@@ -351,7 +335,24 @@ static void ext4_end_bio(struct bio *bio, int error)
 			     bi_sector >> (inode->i_blkbits - 9));
 		mapping_set_error(inode->i_mapping, error);
 	}
-	ext4_put_io_end_defer(io_end);
+
+	if (io_end->flag & EXT4_IO_END_UNWRITTEN) {
+		/*
+		 * Link bio into list hanging from io_end. We have to do it
+		 * atomically as bio completions can be racing against each
+		 * other.
+		 */
+		bio->bi_private = xchg(&io_end->bio, bio);
+		ext4_put_io_end_defer(io_end);
+	} else {
+		/*
+		 * Drop io_end reference early. Inode can get freed once
+		 * we finish the bio.
+		 */
+		ext4_put_io_end_defer(io_end);
+		ext4_finish_bio(bio);
+		bio_put(bio);
+	}
 }
 
 void ext4_io_submit(struct ext4_io_submit *io)
@@ -388,9 +389,6 @@ static int io_submit_init_bio(struct ext4_io_submit *io,
 	bio->bi_bdev = bh->b_bdev;
 	bio->bi_end_io = ext4_end_bio;
 	bio->bi_private = ext4_get_io_end(io->io_end);
-	if (!io->io_end->size)
-		io->io_end->offset = (bh->b_page->index << PAGE_CACHE_SHIFT)
-				     + bh_offset(bh);
 	io->io_bio = bio;
 	io->io_next_block = bh->b_blocknr;
 	return 0;
@@ -398,9 +396,9 @@ static int io_submit_init_bio(struct ext4_io_submit *io,
 
 static int io_submit_add_bh(struct ext4_io_submit *io,
 			    struct inode *inode,
+			    struct page *page,
 			    struct buffer_head *bh)
 {
-	ext4_io_end_t *io_end;
 	int ret;
 
 	if (io->io_bio && bh->b_blocknr != io->io_next_block) {
@@ -412,13 +410,9 @@ submit_and_retry:
 		if (ret)
 			return ret;
 	}
-	ret = bio_add_page(io->io_bio, bh->b_page, bh->b_size, bh_offset(bh));
+	ret = bio_add_page(io->io_bio, page, bh->b_size, bh_offset(bh));
 	if (ret != bh->b_size)
 		goto submit_and_retry;
-	io_end = io->io_end;
-	if (test_clear_buffer_dirty(bh))
-		ext4_set_io_unwritten_flag(inode, io_end);
-	io_end->size += bh->b_size;
 	io->io_next_block++;
 	return 0;
 }
@@ -504,7 +498,8 @@ int ext4_bio_write_page(struct ext4_io_submit *io,
 	do {
 		if (!buffer_async_write(bh))
 			continue;
-		ret = io_submit_add_bh(io, inode, bh);
+		ret = io_submit_add_bh(io, inode,
+				       data_page ? data_page : page, bh);
 		if (ret) {
 			/*
 			 * We only get here on ENOMEM.  Not much else

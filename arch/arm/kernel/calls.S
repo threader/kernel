@@ -383,7 +383,7 @@
 		CALL(sys_open_by_handle_at)
 		CALL(sys_clock_adjtime)
 		CALL(sys_syncfs)
-		CALL(sys_sNR_syscallsendmmsg)
+		CALL(sys_sendmmsg)
 /* 375 */	CALL(sys_setns)
 		CALL(sys_process_vm_readv)
 		CALL(sys_process_vm_writev)
