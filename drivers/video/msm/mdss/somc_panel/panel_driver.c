@@ -36,7 +36,6 @@
 #include "../mdss_mdp.h"
 #include "../mdss_dsi.h"
 #include "somc_panels.h"
-#include "mdss_livedisplay.h"
 
 #define DT_CMD_HDR 		  6
 #define MIN_REFRESH_RATE	  48
@@ -2156,7 +2155,8 @@ static void mdss_dsi_parse_trigger(struct device_node *np, char *trigger,
 	}
 }
 
-int mdss_dsi_parse_dcs_cmds(struct device_node *np,
+
+static int mdss_dsi_parse_dcs_cmds(struct device_node *np,
 		struct dsi_panel_cmds *pcmds, char *cmd_key, char *link_key)
 {
 	const char *data;
@@ -3480,24 +3480,19 @@ static int mdss_panel_parse_display_timings(struct device_node *np,
 
 	timings_np = of_get_child_by_name(np, "qcom,mdss-dsi-display-timings");
 	if (!timings_np) {
-		struct dsi_panel_timing *pt;
-
-		pt = kzalloc(sizeof(*pt), GFP_KERNEL);
-		if (!pt)
-			return -ENOMEM;
+		struct dsi_panel_timing pt;
+		memset(&pt, 0, sizeof(struct dsi_panel_timing));
 
 		/*
 		 * display timings node is not available, fallback to reading
 		 * timings directly from root node instead
 		 */
 		pr_debug("reading display-timings from panel node\n");
-		rc = mdss_dsi_panel_timing_from_dt(np, pt, panel_data);
+		rc = mdss_dsi_panel_timing_from_dt(np, &pt, panel_data);
 		if (!rc) {
 			mdss_dsi_panel_config_res_properties(np,
-				pt, panel_data);
-			rc = mdss_dsi_panel_timing_switch(ctrl, &pt->timing);
-		} else {
-			kfree(pt);
+				&pt, panel_data);
+			rc = mdss_dsi_panel_timing_switch(ctrl, &pt.timing);
 		}
 		return rc;
 	}
@@ -4059,7 +4054,6 @@ int mdss_panel_parse_dt(struct device_node *np,
 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->post_panel_on_cmds,
 		"qcom,mdss-dsi-post-panel-on-command", NULL);
 
-	mdss_livedisplay_parse_dt(np, pinfo);
 
 	return spec_pdata->parse_specific_dt(np, ctrl_pdata);
 
@@ -4096,7 +4090,6 @@ int mdss_dsi_panel_gpios(struct device_node *node,
 	} else
 		pr_warn("%s:%d Unable to get valid DISP N5 GPIO\n",
 						__func__, __LINE__);
-
 
 	return rc;
 }
