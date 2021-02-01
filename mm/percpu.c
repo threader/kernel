@@ -890,8 +890,8 @@ static void __percpu *pcpu_alloc(size_t size, size_t align, bool reserved,
 	size = ALIGN(size, 2);
 
 	if (unlikely(!size || size > PCPU_MIN_UNIT_SIZE || align > PAGE_SIZE)) {
-		WARN(true, "illegal size (%zu) or align (%zu) for "
-		     "percpu allocation\n", size, align);
+		WARN(true, "illegal size (%zu) or align (%zu) for percpu allocation\n",
+		     size, align);
 		return NULL;
 	}
 
@@ -967,8 +967,10 @@ restart:
 	 * tasks to create chunks simultaneously.  Serialize and create iff
 	 * there's still no empty chunk after grabbing the mutex.
 	 */
-	if (is_atomic)
+	if (is_atomic) {
+		err = "atomic alloc failed, no space left";
 		goto fail;
+	}
 
 	if (list_empty(&pcpu_slot[pcpu_nr_slots - 1])) {
 		chunk = pcpu_create_chunk();
@@ -2057,8 +2059,9 @@ int __init pcpu_embed_first_chunk(size_t reserved_size, size_t dyn_size,
 
 out_free_areas:
 	for (group = 0; group < ai->nr_groups; group++)
-		free_fn(areas[group],
-			ai->groups[group].nr_units * ai->unit_size);
+		if (areas[group])
+			free_fn(areas[group],
+				ai->groups[group].nr_units * ai->unit_size);
 out_free:
 	pcpu_free_alloc_info(ai);
 	if (areas)

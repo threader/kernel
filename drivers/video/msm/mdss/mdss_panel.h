@@ -663,6 +663,8 @@ struct mdss_panel_info {
 	struct lvds_panel_info lvds;
 	struct edp_panel_info edp;
 
+	struct mdss_livedisplay_ctx *livedisplay;
+
 	bool is_dba_panel;
 	/* debugfs structure for the panel */
 	struct mdss_panel_debugfs_info *debugfs_info;
@@ -679,9 +681,6 @@ struct mdss_panel_info {
 	__u32 width;
 	__u32 height;
 #endif
-
-
-	struct mdss_livedisplay_ctx *livedisplay;
 
 };
 

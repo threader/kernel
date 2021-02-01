@@ -3130,7 +3130,10 @@ int mdss_mdp_pcc_config(struct mdp_pcc_cfg_data *config,
 		*copyback = 1;
 		mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF);
 	} else {
-		mdss_pp_res->pcc_disp_cfg[disp_num] = *config;
+		mdss_pp_res->raw_pcc_disp_cfg[disp_num] = *config;
+		pcc_combine(&mdss_pp_res->raw_pcc_disp_cfg[disp_num],
+					&mdss_pp_res->user_pcc_disp_cfg[disp_num],
+					&mdss_pp_res->pcc_disp_cfg[disp_num]);
 		mdss_pp_res->pp_disp_flags[disp_num] |= PP_FLAGS_DIRTY_PCC;
 		if(config->ops & MDP_PP_OPS_DEFER_ENABLE)
 			mdss_pp_res->pp_disp_flags[disp_num] &= ~PP_FLAGS_DIRTY_PCC;

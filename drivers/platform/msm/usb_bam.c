@@ -264,7 +264,6 @@ void msm_bam_set_hsic_host_dev(struct device *dev)
 	} else if (host_info[HSIC_CTRL].dev) {
 		pr_debug("%s: Try Putting hsic device %pK, lpm:%d\n", __func__,
 			host_info[HSIC_CTRL].dev, info[HSIC_CTRL].in_lpm);
->>>>>>> 3e78c2ec4b0a... usb: replace %p with %pK
 		/* Just release previous device if not already done */
 		if (!info[HSIC_CTRL].in_lpm) {
 			info[HSIC_CTRL].in_lpm = true;

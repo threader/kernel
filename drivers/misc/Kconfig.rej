@@ -1,0 +1,22 @@
+--- drivers/misc/Kconfig
++++ drivers/misc/Kconfig
+@@ -542,7 +542,7 @@ config SRAM
+ 	  areas found on many SoCs.
+ 
+ config UID_SYS_STATS
+-	tristate "Per-UID statistics"
++	bool "Per-UID statistics"
+ 	depends on PROFILING
+ 	help
+ 	  Per UID based cpu time statistics exported to /proc/uid_cputime
+--- drivers/misc/Kconfig
++++ drivers/misc/Kconfig
+@@ -543,7 +543,7 @@ config SRAM
+ 
+ config UID_SYS_STATS
+ 	bool "Per-UID statistics"
+-	depends on PROFILING
++	depends on PROFILING && TASK_XACCT && TASK_IO_ACCOUNTING
+ 	help
+ 	  Per UID based cpu time statistics exported to /proc/uid_cputime
+ 	  Per UID based io statistics exported to /proc/uid_io

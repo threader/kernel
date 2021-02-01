@@ -2117,6 +2117,7 @@ static int bio_readpage_error(struct bio *failed_bio, u64 phy_offset,
 	struct extent_io_tree *failure_tree = &BTRFS_I(inode)->io_failure_tree;
 	struct extent_io_tree *tree = &BTRFS_I(inode)->io_tree;
 	struct extent_map_tree *em_tree = &BTRFS_I(inode)->extent_tree;
+	struct extent_state *state;
 	struct bio *bio;
 	struct btrfs_io_bio *btrfs_failed_bio;
 	struct btrfs_io_bio *btrfs_bio;

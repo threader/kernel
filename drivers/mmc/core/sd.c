@@ -1067,7 +1067,7 @@ static int mmc_sd_init_card(struct mmc_host *host, u32 ocr,
 	if (!mmc_host_is_spi(host)) {
 		err = mmc_select_card(card);
 		if (err)
-			return err;
+			goto free_card;
 	}
 
 	err = mmc_sd_setup_card(host, card, oldcard != NULL);
