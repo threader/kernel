@@ -23,7 +23,7 @@ struct flex_array {
 			int element_size;
 			int total_nr_elements;
 			int elems_per_part;
-			struct reciprocal_value reciprocal_elems;
+			u32 reciprocal_elems;
 			struct flex_array_part *parts[];
 		};
 		/*

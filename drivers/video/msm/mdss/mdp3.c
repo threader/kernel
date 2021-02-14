@@ -619,7 +619,8 @@ void mdp3_bus_bw_iommu_enable(int enable, int client)
 	if (enable)
 		bus_handle->ref_cnt++;
 	else
-		bus_handle->ref_cnt--;
+		if (bus_handle->ref_cnt)
+			bus_handle->ref_cnt--;
 	ref_cnt = bus_handle->ref_cnt;
 	mutex_unlock(&mdp3_res->res_mutex);
 
@@ -684,6 +685,7 @@ int mdp3_get_mdp_dsi_clk(void)
 int mdp3_put_mdp_dsi_clk(void)
 {
 	int rc;
+
 	mutex_lock(&mdp3_res->res_mutex);
 	rc = mdp3_clk_update(MDP3_CLK_DSI, 0);
 	mutex_unlock(&mdp3_res->res_mutex);
@@ -2141,9 +2143,10 @@ static int mdp3_continuous_splash_on(struct mdss_panel_data *pdata)
 {
 	struct mdss_panel_info *panel_info = &pdata->panel_info;
 	struct mdp3_bus_handle_map *bus_handle;
-	u64 ab, ib;
+	u64 ab = 0;
+	u64 ib = 0;
 	u32 vtotal;
-	int rc;
+	int rc = 0;
 
 	pr_debug("mdp3__continuous_splash_on\n");
 
@@ -2221,6 +2224,7 @@ static int mdp3_panel_register_done(struct mdss_panel_data *pdata)
 	if (pdata->panel_info.cont_splash_enabled == false)
 		mdp3_res->allow_iommu_update = true;
 
+	mdss_res->pdata = pdata;
 	return rc;
 }
 
@@ -2331,7 +2335,8 @@ static ssize_t mdp3_store_smart_blit(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t len)
 {
 	u32 data = -1;
-	int rc = 0;
+	ssize_t rc = 0;
+
 	rc = kstrtoint(buf, 10, &data);
 	if (rc) {
 		pr_err("kstrtoint failed. rc=%d\n", rc);
@@ -2508,25 +2513,33 @@ int mdp3_footswitch_ctrl(int enable)
 {
 	int rc = 0;
 
+	mutex_lock(&mdp3_res->fs_idle_pc_lock);
+	//MDSS_XLOG(enable);
 	if (!mdp3_res->fs_ena && enable) {
 		rc = regulator_enable(mdp3_res->fs);
 		if (rc) {
 			pr_err("mdp footswitch ctrl enable failed\n");
+			mutex_unlock(&mdp3_res->fs_idle_pc_lock);
 			return -EINVAL;
-		} else {
-			pr_debug("mdp footswitch ctrl enable success\n");
-			mdp3_res->fs_ena = true;
 		}
-	} else if (mdp3_res->fs_ena && !enable) {
+		pr_debug("mdp footswitch ctrl enable success\n");
+		mdp3_enable_regulator(true);
+		mdp3_res->fs_ena = true;
+	} else if (!enable && mdp3_res->fs_ena) {
+		mdp3_enable_regulator(false);
 		rc = regulator_disable(mdp3_res->fs);
-		if (rc)
-			pr_warn("mdp footswitch ctrl disable failed\n");
-		else
+		if (rc) {
+			pr_err("mdp footswitch ctrl disable failed\n");
+			mutex_unlock(&mdp3_res->fs_idle_pc_lock);
+			return -EINVAL;
+		}
 			mdp3_res->fs_ena = false;
+		pr_debug("mdp3 footswitch ctrl disable configured\n");
 	} else {
 		pr_debug("mdp3 footswitch ctrl already configured\n");
 	}
 
+	mutex_unlock(&mdp3_res->fs_idle_pc_lock);
 	return rc;
 }
 
@@ -2557,6 +2570,7 @@ static int mdp3_probe(struct platform_device *pdev)
 		.data = NULL,
 	};
 
+	pr_debug("%s: START\n", __func__);
 	if (!pdev->dev.of_node) {
 		pr_err("MDP driver only supports device tree probe\n");
 		return -ENOTSUPP;
