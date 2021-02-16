@@ -294,7 +294,7 @@ struct key *key_alloc(struct key_type *type, const char *desc,
 	key->perm = perm;
 	key->flags = 0;
 	key->expiry = 0;
-	key->payload.data = NULL;
+	key->payload.data[0] = NULL;
 	key->security = NULL;
 
 	if (!(flags & KEY_ALLOC_NOT_IN_QUOTA))

@@ -119,7 +119,7 @@ int user_update(struct key *key, struct key_preparsed_payload *prep)
 
 	if (ret == 0) {
 		/* attach the new data, displacing the old */
-		zap = key->payload.data;
+		zap = key->payload.data[0];
 		rcu_assign_keypointer(key, upayload);
 		key->expiry = 0;
 	}

@@ -479,7 +479,7 @@ key_ref_t search_process_keyrings(struct key_type *type,
 		down_read(&cred->request_key_auth->sem);
 
 		if (key_validate(cred->request_key_auth) == 0) {
-			rka = cred->request_key_auth->payload.data;
+			rka = cred->request_key_auth->payload.data[0];
 
 			key_ref = search_process_keyrings(type, description,
 							  match, rka->cred);
@@ -663,7 +663,7 @@ try_again:
 			key_ref = ERR_PTR(-EKEYREVOKED);
 			key = NULL;
 		} else {
-			rka = cred->request_key_auth->payload.data;
+			rka = cred->request_key_auth->payload.data[0];
 			key = rka->dest_keyring;
 			atomic_inc(&key->usage);
 		}
