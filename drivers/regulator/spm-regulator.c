@@ -147,6 +147,7 @@ static int _spm_regulator_set_voltage(struct regulator_dev *rdev)
 	struct spm_vreg *vreg = rdev_get_drvdata(rdev);
 	bool spm_failed = false;
 	int rc = 0;
+	u32 slew_delay;
 	u8 reg;
 
 	if (vreg->vlevel == vreg->last_set_vlevel)

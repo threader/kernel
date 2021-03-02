@@ -1,6 +1,6 @@
 /*Qualcomm Secure Execution Environment Communicator (QSEECOM) driver
  *
- * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -66,7 +66,10 @@
 #define QSEE_CE_CLK_100MHZ		100000000
 #define CE_CLK_DIV			1000000
 
-#define QSEECOM_MAX_SG_ENTRY	512
+#define QSEECOM_MAX_SG_ENTRY			512
+#define QSEECOM_SG_ENTRY_MSG_BUF_SZ_64BIT	\
+			(QSEECOM_MAX_SG_ENTRY * SG_ENTRY_SZ_64BIT)
+
 #define QSEECOM_INVALID_KEY_ID  0xff
 
 /* Save partition image hash for authentication check */
@@ -77,6 +80,9 @@
 
 /* Encrypt/Decrypt Data Integrity Partition (DIP) for MDTP */
 #define SCM_MDTP_CIPHER_DIP		0x01
+
+/* Maximum Allowed Size (128K) of Data Integrity Partition (DIP) for MDTP */
+#define MAX_DIP			0x20000
 
 #define RPMB_SERVICE			0x2000
 #define SSD_SERVICE			0x3000
@@ -116,6 +122,35 @@ static DEFINE_MUTEX(qsee_bw_mutex);
 static DEFINE_MUTEX(app_access_lock);
 static DEFINE_MUTEX(clk_access_lock);
 
+struct sglist_info {
+	uint32_t indexAndFlags;
+	uint32_t sizeOrCount;
+};
+
+/*
+ * The 31th bit indicates only one or multiple physical address inside
+ * the request buffer. If it is set,  the index locates a single physical addr
+ * inside the request buffer, and `sizeOrCount` is the size of the memory being
+ * shared at that physical address.
+ * Otherwise, the index locates an array of {start, len} pairs (a
+ * "scatter/gather list"), and `sizeOrCount` gives the number of entries in
+ * that array.
+ *
+ * The 30th bit indicates 64 or 32bit address; when it is set, physical addr
+ * and scatter gather entry sizes are 64-bit values.  Otherwise, 32-bit values.
+ *
+ * The bits [0:29] of `indexAndFlags` hold an offset into the request buffer.
+ */
+#define SGLISTINFO_SET_INDEX_FLAG(c, s, i)	\
+	((uint32_t)(((c & 1) << 31) | ((s & 1) << 30) | (i & 0x3fffffff)))
+
+#define SGLISTINFO_TABLE_SIZE	(sizeof(struct sglist_info) * MAX_ION_FD)
+
+#define FEATURE_ID_WHITELIST	15	/*whitelist feature id*/
+
+#define MAKE_WHITELIST_VERSION(major, minor, patch) \
+	(((major & 0x3FF) << 22) | ((minor & 0x3FF) << 12) | (patch & 0xFFF))
+
 struct qseecom_registered_listener_list {
 	struct list_head                 list;
 	struct qseecom_register_listener_req svc;
@@ -130,6 +165,8 @@ struct qseecom_registered_listener_list {
 	bool                       listener_in_use;
 	/* wq for thread blocked on this listener*/
 	wait_queue_head_t          listener_block_app_wq;
+	struct sglist_info sglistinfo_ptr[MAX_ION_FD];
+	uint32_t sglist_cnt;
 };
 
 struct qseecom_registered_app_list {
@@ -183,6 +220,7 @@ struct qseecom_control {
 	uint32_t          qseos_version;
 	uint32_t          qsee_version;
 	struct device *pdev;
+	bool  whitelist_support;
 	bool  commonlib_loaded;
 	bool  commonlib64_loaded;
 	struct ion_handle *cmnlib_ion_handle;
@@ -207,7 +245,8 @@ struct qseecom_control {
 	bool no_clock_support;
 	unsigned int ce_opp_freq_hz;
 	bool appsbl_qseecom_support;
-	uint32_t qsee_reentrancy_support;
+	int is_apps_region_protected;
+	bool qsee_reentrancy_support;
 
 	uint32_t app_block_ref_cnt;
 	wait_queue_head_t app_block_wq;
@@ -258,6 +297,9 @@ struct qseecom_dev_handle {
 	bool  perf_enabled;
 	bool  fast_load_enabled;
 	enum qseecom_bandwidth_request_mode mode;
+	struct sglist_info sglistinfo_ptr[MAX_ION_FD];
+	uint32_t sglist_cnt;
+	bool use_legacy_cmd;
 };
 
 struct qseecom_key_id_usage_desc {
@@ -294,9 +336,17 @@ static void __qseecom_disable_clk(enum qseecom_ce_hw_instance ce);
 static int __qseecom_init_clk(enum qseecom_ce_hw_instance ce);
 static int qseecom_load_commonlib_image(struct qseecom_dev_handle *data,
 					char *cmnlib_name);
+static void __qseecom_reentrancy_check_if_no_app_blocked(void);
 static int qseecom_enable_ice_setup(int usage);
 static int qseecom_disable_ice_setup(int usage);
 static void __qseecom_reentrancy_check_if_no_app_blocked(uint32_t smc_id);
+
+static int get_qseecom_keymaster_status(char *str)
+{
+	get_option(&str, &qseecom.is_apps_region_protected);
+	return 1;
+}
+__setup("androidboot.keymaster=", get_qseecom_keymaster_status);
 
 static int qseecom_scm_call2(uint32_t svc_id, uint32_t tz_cmd_id,
 			const void *req_buf, void *resp_buf)
@@ -517,6 +567,34 @@ static int qseecom_scm_call2(uint32_t svc_id, uint32_t tz_cmd_id,
 			ret = scm_call2(smc_id, &desc);
 			break;
 		}
+		case QSEOS_LISTENER_DATA_RSP_COMMAND_WHITELIST: {
+			struct qseecom_client_listener_data_irsp *req;
+			struct qseecom_client_listener_data_64bit_irsp *req_64;
+
+			smc_id =
+			TZ_OS_LISTENER_RESPONSE_HANDLER_WITH_WHITELIST_ID;
+			desc.arginfo =
+			TZ_OS_LISTENER_RESPONSE_HANDLER_WITH_WHITELIST_PARAM_ID;
+			if (qseecom.qsee_version < QSEE_VERSION_40) {
+				req =
+				(struct qseecom_client_listener_data_irsp *)
+				req_buf;
+				desc.args[0] = req->listener_id;
+				desc.args[1] = req->status;
+				desc.args[2] = req->sglistinfo_ptr;
+				desc.args[3] = req->sglistinfo_len;
+			} else {
+				req_64 =
+			(struct qseecom_client_listener_data_64bit_irsp *)
+				req_buf;
+				desc.args[0] = req_64->listener_id;
+				desc.args[1] = req_64->status;
+				desc.args[2] = req_64->sglistinfo_ptr;
+				desc.args[3] = req_64->sglistinfo_len;
+			}
+			ret = scm_call2(smc_id, &desc);
+			break;
+		}
 		case QSEOS_LOAD_EXTERNAL_ELF_COMMAND: {
 			struct qseecom_load_app_ireq *req;
 			struct qseecom_load_app_64bit_ireq *req_64bit;
@@ -572,6 +650,38 @@ static int qseecom_scm_call2(uint32_t svc_id, uint32_t tz_cmd_id,
 			ret = scm_call2(smc_id, &desc);
 			break;
 		}
+		case QSEOS_CLIENT_SEND_DATA_COMMAND_WHITELIST: {
+			struct qseecom_client_send_data_ireq *req;
+			struct qseecom_client_send_data_64bit_ireq *req_64bit;
+
+			smc_id = TZ_APP_QSAPP_SEND_DATA_WITH_WHITELIST_ID;
+			desc.arginfo =
+			TZ_APP_QSAPP_SEND_DATA_WITH_WHITELIST_ID_PARAM_ID;
+			if (qseecom.qsee_version < QSEE_VERSION_40) {
+				req = (struct qseecom_client_send_data_ireq *)
+					req_buf;
+				desc.args[0] = req->app_id;
+				desc.args[1] = req->req_ptr;
+				desc.args[2] = req->req_len;
+				desc.args[3] = req->rsp_ptr;
+				desc.args[4] = req->rsp_len;
+				desc.args[5] = req->sglistinfo_ptr;
+				desc.args[6] = req->sglistinfo_len;
+			} else {
+				req_64bit =
+				(struct qseecom_client_send_data_64bit_ireq *)
+					req_buf;
+				desc.args[0] = req_64bit->app_id;
+				desc.args[1] = req_64bit->req_ptr;
+				desc.args[2] = req_64bit->req_len;
+				desc.args[3] = req_64bit->rsp_ptr;
+				desc.args[4] = req_64bit->rsp_len;
+				desc.args[5] = req_64bit->sglistinfo_ptr;
+				desc.args[6] = req_64bit->sglistinfo_len;
+			}
+			ret = scm_call2(smc_id, &desc);
+			break;
+		}
 		case QSEOS_RPMB_PROVISION_KEY_COMMAND: {
 			struct qseecom_client_send_service_ireq *req;
 			req = (struct qseecom_client_send_service_ireq *)
@@ -587,6 +697,13 @@ static int qseecom_scm_call2(uint32_t svc_id, uint32_t tz_cmd_id,
 			smc_id = TZ_OS_RPMB_ERASE_ID;
 			desc.arginfo = TZ_OS_RPMB_ERASE_ID_PARAM_ID;
 			__qseecom_reentrancy_check_if_no_app_blocked(smc_id);
+			ret = scm_call2(smc_id, &desc);
+			break;
+		}
+		case QSEOS_RPMB_CHECK_PROV_STATUS_COMMAND: {
+			smc_id = TZ_OS_RPMB_CHECK_PROV_STATUS_ID;
+			desc.arginfo = TZ_OS_RPMB_CHECK_PROV_STATUS_ID_PARAM_ID;
+			__qseecom_reentrancy_check_if_no_app_blocked();
 			ret = scm_call2(smc_id, &desc);
 			break;
 		}
@@ -699,6 +816,36 @@ static int qseecom_scm_call2(uint32_t svc_id, uint32_t tz_cmd_id,
 			ret = scm_call2(smc_id, &desc);
 			break;
 		}
+		case QSEOS_TEE_OPEN_SESSION_WHITELIST: {
+			struct qseecom_qteec_ireq *req;
+			struct qseecom_qteec_64bit_ireq *req_64bit;
+
+			smc_id = TZ_APP_GPAPP_OPEN_SESSION_WITH_WHITELIST_ID;
+			desc.arginfo =
+			TZ_APP_GPAPP_OPEN_SESSION_WITH_WHITELIST_ID_PARAM_ID;
+			if (qseecom.qsee_version < QSEE_VERSION_40) {
+				req = (struct qseecom_qteec_ireq *)req_buf;
+				desc.args[0] = req->app_id;
+				desc.args[1] = req->req_ptr;
+				desc.args[2] = req->req_len;
+				desc.args[3] = req->resp_ptr;
+				desc.args[4] = req->resp_len;
+				desc.args[5] = req->sglistinfo_ptr;
+				desc.args[6] = req->sglistinfo_len;
+			} else {
+				req_64bit = (struct qseecom_qteec_64bit_ireq *)
+						req_buf;
+				desc.args[0] = req_64bit->app_id;
+				desc.args[1] = req_64bit->req_ptr;
+				desc.args[2] = req_64bit->req_len;
+				desc.args[3] = req_64bit->resp_ptr;
+				desc.args[4] = req_64bit->resp_len;
+				desc.args[5] = req_64bit->sglistinfo_ptr;
+				desc.args[6] = req_64bit->sglistinfo_len;
+			}
+			ret = scm_call2(smc_id, &desc);
+			break;
+		}
 		case QSEOS_TEE_INVOKE_COMMAND: {
 			struct qseecom_qteec_ireq *req;
 			struct qseecom_qteec_64bit_ireq *req_64bit;
@@ -719,6 +866,36 @@ static int qseecom_scm_call2(uint32_t svc_id, uint32_t tz_cmd_id,
 				desc.args[2] = req_64bit->req_len;
 				desc.args[3] = req_64bit->resp_ptr;
 				desc.args[4] = req_64bit->resp_len;
+			}
+			ret = scm_call2(smc_id, &desc);
+			break;
+		}
+		case QSEOS_TEE_INVOKE_COMMAND_WHITELIST: {
+			struct qseecom_qteec_ireq *req;
+			struct qseecom_qteec_64bit_ireq *req_64bit;
+
+			smc_id = TZ_APP_GPAPP_INVOKE_COMMAND_WITH_WHITELIST_ID;
+			desc.arginfo =
+			TZ_APP_GPAPP_INVOKE_COMMAND_WITH_WHITELIST_ID_PARAM_ID;
+			if (qseecom.qsee_version < QSEE_VERSION_40) {
+				req = (struct qseecom_qteec_ireq *)req_buf;
+				desc.args[0] = req->app_id;
+				desc.args[1] = req->req_ptr;
+				desc.args[2] = req->req_len;
+				desc.args[3] = req->resp_ptr;
+				desc.args[4] = req->resp_len;
+				desc.args[5] = req->sglistinfo_ptr;
+				desc.args[6] = req->sglistinfo_len;
+			} else {
+				req_64bit = (struct qseecom_qteec_64bit_ireq *)
+						req_buf;
+				desc.args[0] = req_64bit->app_id;
+				desc.args[1] = req_64bit->req_ptr;
+				desc.args[2] = req_64bit->req_len;
+				desc.args[3] = req_64bit->resp_ptr;
+				desc.args[4] = req_64bit->resp_len;
+				desc.args[5] = req_64bit->sglistinfo_ptr;
+				desc.args[6] = req_64bit->sglistinfo_len;
 			}
 			ret = scm_call2(smc_id, &desc);
 			break;
@@ -891,6 +1068,10 @@ static int __qseecom_set_sb_memory(struct qseecom_registered_listener_list *svc,
 	}
 	/* Populate the structure for sending scm call to load image */
 	svc->sb_virt = (char *) ion_map_kernel(qseecom.ion_clnt, svc->ihandle);
+	if (IS_ERR_OR_NULL(svc->sb_virt)) {
+		pr_err("ION memory mapping for listener shared buffer failed\n");
+		return -ENOMEM;
+	}
 	svc->sb_phys = (phys_addr_t)pa;
 
 	if (qseecom.qsee_version < QSEE_VERSION_40) {
@@ -950,7 +1131,7 @@ static int qseecom_register_listener(struct qseecom_dev_handle *data,
 		return -EBUSY;
 	}
 
-	new_entry = kmalloc(sizeof(*new_entry), GFP_KERNEL);
+	new_entry = kzalloc(sizeof(*new_entry), GFP_KERNEL);
 	if (!new_entry) {
 		pr_err("kmalloc failed\n");
 		return -ENOMEM;
@@ -1078,9 +1259,11 @@ static int __qseecom_set_msm_bus_request(uint32_t mode)
 			pr_err("Bandwidth req failed(%d) MODE (%d)\n",
 							ret, mode);
 			if (qclk->ce_core_src_clk != NULL) {
-				if (mode == INACTIVE)
-					__qseecom_enable_clk(CLK_QSEE);
-				else
+				if (mode == INACTIVE) {
+					ret = __qseecom_enable_clk(CLK_QSEE);
+					if (ret)
+						pr_err("CLK enable failed\n");
+				} else
 					__qseecom_disable_clk(CLK_QSEE);
 			}
 		}
@@ -1347,6 +1530,10 @@ static int qseecom_set_client_mem_param(struct qseecom_dev_handle *data,
 	/* Populate the structure for sending scm call to load image */
 	data->client.sb_virt = (char *) ion_map_kernel(qseecom.ion_clnt,
 							data->client.ihandle);
+	if (IS_ERR_OR_NULL(data->client.sb_virt)) {
+		pr_err("ION memory mapping for client shared buf failed\n");
+		return -ENOMEM;
+	}
 	data->client.sb_phys = (phys_addr_t)pa;
 	data->client.sb_length = req.sb_len;
 	data->client.user_virt_sb_base = (uintptr_t)req.virt_sb_base;
@@ -1375,12 +1562,20 @@ static int __qseecom_qseos_fail_return_resp_tz(struct qseecom_dev_handle *data,
 		pr_warn("listener_id:%x, lstnr: %x\n",
 					ptr_svc->svc.listener_id, lstnr);
 
-	if (ptr_svc && ptr_svc->ihandle)
-		msm_ion_do_cache_op(qseecom.ion_clnt, ptr_svc->ihandle,
+	if (ptr_svc && ptr_svc->ihandle) {
+		ret = msm_ion_do_cache_op(qseecom.ion_clnt, ptr_svc->ihandle,
 					ptr_svc->sb_virt, ptr_svc->sb_length,
 					ION_IOC_CLEAN_INV_CACHES);
-	if (lstnr == RPMB_SERVICE)
-		__qseecom_enable_clk(CLK_QSEE);
+		if (ret) {
+			pr_err("cache operation failed %d\n", ret);
+			return ret;
+		}
+	}
+	if (lstnr == RPMB_SERVICE) {
+		ret = __qseecom_enable_clk(CLK_QSEE);
+		if (ret)
+			return ret;
+	}
 
 	ret = qseecom_scm_call(SCM_SVC_TZSCHEDULER, 1, send_data_rsp,
 				sizeof(send_data_rsp), resp, sizeof(*resp));
@@ -1402,6 +1597,16 @@ static int __qseecom_qseos_fail_return_resp_tz(struct qseecom_dev_handle *data,
 	return ret;
 }
 
+static void __qseecom_clean_listener_sglistinfo(
+			struct qseecom_registered_listener_list *ptr_svc)
+{
+	if (ptr_svc->sglist_cnt) {
+		memset(ptr_svc->sglistinfo_ptr, 0,
+			SGLISTINFO_TABLE_SIZE);
+		ptr_svc->sglist_cnt = 0;
+	}
+}
+
 static int __qseecom_process_incomplete_cmd(struct qseecom_dev_handle *data,
 					struct qseecom_command_scm_resp *resp)
 {
@@ -1410,9 +1615,14 @@ static int __qseecom_process_incomplete_cmd(struct qseecom_dev_handle *data,
 	uint32_t lstnr;
 	unsigned long flags;
 	struct qseecom_client_listener_data_irsp send_data_rsp;
+	struct qseecom_client_listener_data_64bit_irsp send_data_rsp_64bit;
 	struct qseecom_registered_listener_list *ptr_svc = NULL;
 	sigset_t new_sigset;
 	sigset_t old_sigset;
+	uint32_t status;
+	void *cmd_buf = NULL;
+	size_t cmd_len;
+	struct sglist_info *table = NULL;
 
 	while (resp->result == QSEOS_RESULT_INCOMPLETE) {
 		lstnr = resp->data;
@@ -1424,6 +1634,7 @@ static int __qseecom_process_incomplete_cmd(struct qseecom_dev_handle *data,
 		list_for_each_entry(ptr_svc,
 				&qseecom.registered_listener_list_head, list) {
 			if (ptr_svc->svc.listener_id == lstnr) {
+				ptr_svc->listener_in_use = true;
 				ptr_svc->rcv_req_flag = 1;
 				wake_up_interruptible(&ptr_svc->rcv_req_wq);
 				break;
@@ -1471,14 +1682,42 @@ static int __qseecom_process_incomplete_cmd(struct qseecom_dev_handle *data,
 			pr_err("Abort clnt %d waiting on lstnr svc %d, ret %d",
 				data->client.app_id, lstnr, ret);
 			rc = -ENODEV;
-			send_data_rsp.status  = QSEOS_RESULT_FAILURE;
+			status = QSEOS_RESULT_FAILURE;
 		} else {
-			send_data_rsp.status  = QSEOS_RESULT_SUCCESS;
+			status = QSEOS_RESULT_SUCCESS;
 		}
 
 		qseecom.send_resp_flag = 0;
-		send_data_rsp.qsee_cmd_id = QSEOS_LISTENER_DATA_RSP_COMMAND;
-		send_data_rsp.listener_id  = lstnr;
+		ptr_svc->send_resp_flag = 0;
+		table = ptr_svc->sglistinfo_ptr;
+		if (qseecom.qsee_version < QSEE_VERSION_40) {
+			send_data_rsp.listener_id  = lstnr;
+			send_data_rsp.status = status;
+			send_data_rsp.sglistinfo_ptr =
+				(uint32_t)virt_to_phys(table);
+			send_data_rsp.sglistinfo_len =
+				SGLISTINFO_TABLE_SIZE;
+			dmac_flush_range((void *)table,
+				(void *)table + SGLISTINFO_TABLE_SIZE);
+			cmd_buf = (void *)&send_data_rsp;
+			cmd_len = sizeof(send_data_rsp);
+		} else {
+			send_data_rsp_64bit.listener_id  = lstnr;
+			send_data_rsp_64bit.status = status;
+			send_data_rsp_64bit.sglistinfo_ptr =
+				virt_to_phys(table);
+			send_data_rsp_64bit.sglistinfo_len =
+				SGLISTINFO_TABLE_SIZE;
+			dmac_flush_range((void *)table,
+				(void *)table + SGLISTINFO_TABLE_SIZE);
+			cmd_buf = (void *)&send_data_rsp_64bit;
+			cmd_len = sizeof(send_data_rsp_64bit);
+		}
+		if (qseecom.whitelist_support == false)
+			*(uint32_t *)cmd_buf = QSEOS_LISTENER_DATA_RSP_COMMAND;
+		else
+			*(uint32_t *)cmd_buf =
+				QSEOS_LISTENER_DATA_RSP_COMMAND_WHITELIST;
 		if (ptr_svc)
 			msm_ion_do_cache_op(qseecom.ion_clnt, ptr_svc->ihandle,
 					ptr_svc->sb_virt, ptr_svc->sb_length,
@@ -1488,9 +1727,9 @@ static int __qseecom_process_incomplete_cmd(struct qseecom_dev_handle *data,
 			__qseecom_enable_clk(CLK_QSEE);
 
 		ret = qseecom_scm_call(SCM_SVC_TZSCHEDULER, 1,
-					(const void *)&send_data_rsp,
-					sizeof(send_data_rsp), resp,
-					sizeof(*resp));
+					cmd_buf, cmd_len, resp, sizeof(*resp));
+		ptr_svc->listener_in_use = false;
+		__qseecom_clean_listener_sglistinfo(ptr_svc);
 		if (ret) {
 			pr_err("scm_call() failed with err: %d (app_id = %d)\n",
 				ret, data->client.app_id);
@@ -1523,9 +1762,14 @@ static int __qseecom_reentrancy_process_incomplete_cmd(
 	uint32_t lstnr;
 	unsigned long flags;
 	struct qseecom_client_listener_data_irsp send_data_rsp;
+	struct qseecom_client_listener_data_64bit_irsp send_data_rsp_64bit;
 	struct qseecom_registered_listener_list *ptr_svc = NULL;
 	sigset_t new_sigset;
 	sigset_t old_sigset;
+	uint32_t status;
+	void *cmd_buf = NULL;
+	size_t cmd_len;
+	struct sglist_info *table = NULL;
 
 	while (resp->result == QSEOS_RESULT_INCOMPLETE) {
 		lstnr = resp->data;
@@ -1573,15 +1817,14 @@ static int __qseecom_reentrancy_process_incomplete_cmd(
 		do {
 			if (!wait_event_freezable(qseecom.send_resp_wq,
 				__qseecom_listener_has_sent_rsp(data))) {
-				/* wakeup if this listener sent resp or abort */
-				if (ptr_svc->send_resp_flag || data->abort)
+				/* wakeup if this listener sent resp */
+				if (ptr_svc->send_resp_flag)
 					break;
 			}
 		} while (1);
 		/* lock mutex again after resp sent */
-		mutex_lock(&app_access_lock);
 		ptr_svc->send_resp_flag = 0;
-		qseecom.send_resp_flag = 0;
+		mutex_lock(&app_access_lock);
 
 		/* restore signal mask */
 		sigprocmask(SIG_SETMASK, &old_sigset, NULL);
@@ -1589,27 +1832,58 @@ static int __qseecom_reentrancy_process_incomplete_cmd(
 			pr_err("Abort clnt %d waiting on lstnr svc %d, ret %d",
 				data->client.app_id, lstnr, ret);
 			rc = -ENODEV;
-			send_data_rsp.status  = QSEOS_RESULT_FAILURE;
+			status  = QSEOS_RESULT_FAILURE;
 		} else {
-			send_data_rsp.status  = QSEOS_RESULT_SUCCESS;
+			status  = QSEOS_RESULT_SUCCESS;
 		}
-
-		send_data_rsp.qsee_cmd_id = QSEOS_LISTENER_DATA_RSP_COMMAND;
-		send_data_rsp.listener_id  = lstnr;
-		if (ptr_svc)
+		table = ptr_svc->sglistinfo_ptr;
+		if (qseecom.qsee_version < QSEE_VERSION_40) {
+			send_data_rsp.listener_id  = lstnr;
+			send_data_rsp.status = status;
+			send_data_rsp.sglistinfo_ptr =
+				(uint32_t)virt_to_phys(table);
+			send_data_rsp.sglistinfo_len = SGLISTINFO_TABLE_SIZE;
+			dmac_flush_range((void *)table,
+				(void *)table + SGLISTINFO_TABLE_SIZE);
+			cmd_buf = (void *)&send_data_rsp;
+			cmd_len = sizeof(send_data_rsp);
+		} else {
+			send_data_rsp_64bit.listener_id  = lstnr;
+			send_data_rsp_64bit.status = status;
+			send_data_rsp_64bit.sglistinfo_ptr =
+				virt_to_phys(table);
+			send_data_rsp_64bit.sglistinfo_len =
+				SGLISTINFO_TABLE_SIZE;
+			dmac_flush_range((void *)table,
+				(void *)table + SGLISTINFO_TABLE_SIZE);
+			cmd_buf = (void *)&send_data_rsp_64bit;
+			cmd_len = sizeof(send_data_rsp_64bit);
+		}
+		if (qseecom.whitelist_support == false)
+			*(uint32_t *)cmd_buf = QSEOS_LISTENER_DATA_RSP_COMMAND;
+		else
+			*(uint32_t *)cmd_buf =
+				QSEOS_LISTENER_DATA_RSP_COMMAND_WHITELIST;
+		if (ptr_svc) {
 			msm_ion_do_cache_op(qseecom.ion_clnt, ptr_svc->ihandle,
 					ptr_svc->sb_virt, ptr_svc->sb_length,
-						ION_IOC_CLEAN_INV_CACHES);
+					ION_IOC_CLEAN_INV_CACHES);
+			if (ret) {
+				pr_err("cache operation failed %d\n", ret);
+				return ret;
+			}
+		}
 
-		if (lstnr == RPMB_SERVICE)
-			__qseecom_enable_clk(CLK_QSEE);
+		if (lstnr == RPMB_SERVICE) {
+			ret = __qseecom_enable_clk(CLK_QSEE);
+			if (ret)
+				return ret;
+		}
 
 		ret = qseecom_scm_call(SCM_SVC_TZSCHEDULER, 1,
-					(const void *)&send_data_rsp,
-					sizeof(send_data_rsp), resp,
-					sizeof(*resp));
-
+					cmd_buf, cmd_len, resp, sizeof(*resp));
 		ptr_svc->listener_in_use = false;
+		__qseecom_clean_listener_sglistinfo(ptr_svc);
 		wake_up_interruptible(&ptr_svc->listener_block_app_wq);
 
 		if (ret) {
@@ -1715,6 +1989,8 @@ static int __qseecom_check_app_exists(struct qseecom_check_app_ireq req)
 	}
 
 	memset((void *)&resp, 0, sizeof(resp));
+
+	__qseecom_reentrancy_check_if_no_app_blocked();
 
 	/*  SCM_CALL  to check if app_id for the mentioned app exists */
 	ret = qseecom_scm_call(SCM_SVC_TZSCHEDULER, 1, &req,
@@ -1855,7 +2131,13 @@ static int qseecom_load_app(struct qseecom_dev_handle *data, void __user *argp)
 				ret);
 			goto loadapp_err;
 		}
-
+		if (load_img_req.mdt_len > len || load_img_req.img_len > len) {
+			pr_err("ion len %zu is smaller than mdt_len %u or img_len %u\n",
+					len, load_img_req.mdt_len,
+					load_img_req.img_len);
+			ret = -EINVAL;
+			goto loadapp_err;
+		}
 		/* Populate the structure for sending scm call to load image */
 		if (qseecom.qsee_version < QSEE_VERSION_40) {
 			load_req.qsee_cmd_id = QSEOS_APP_START_COMMAND;
@@ -1879,6 +2161,12 @@ static int qseecom_load_app(struct qseecom_dev_handle *data, void __user *argp)
 
 		msm_ion_do_cache_op(qseecom.ion_clnt, ihandle, NULL, len,
 					ION_IOC_CLEAN_INV_CACHES);
+		if (ret) {
+			pr_err("cache operation failed %d\n", ret);
+			goto loadapp_err;
+		}
+
+		__qseecom_reentrancy_check_if_no_app_blocked();
 
 		/*  SCM_CALL  to load the app and get the app_id back */
 		ret = qseecom_scm_call(SCM_SVC_TZSCHEDULER, 1, cmd_buf,
@@ -2064,6 +2352,7 @@ static int qseecom_unload_app(struct qseecom_dev_handle *data,
 		req.qsee_cmd_id = QSEOS_APP_SHUTDOWN_COMMAND;
 		req.app_id = data->client.app_id;
 
+		__qseecom_reentrancy_check_if_no_app_blocked();
 		/* SCM_CALL to unload the app */
 		ret = qseecom_scm_call(SCM_SVC_TZSCHEDULER, 1, &req,
 				sizeof(struct qseecom_unload_app_ireq),
@@ -2148,11 +2437,6 @@ int __qseecom_process_rpmb_svc_cmd(struct qseecom_dev_handle *data_ptr,
 		return -EINVAL;
 	}
 
-	if ((!req_ptr->cmd_req_buf) || (!req_ptr->resp_buf)) {
-		pr_err("Invalid req/resp buffer, exiting\n");
-		return -EINVAL;
-	}
-
 	/* Clients need to ensure req_buf is at base offset of shared buffer */
 	if ((uintptr_t)req_ptr->cmd_req_buf !=
 			data_ptr->client.user_virt_sb_base) {
@@ -2160,15 +2444,11 @@ int __qseecom_process_rpmb_svc_cmd(struct qseecom_dev_handle *data_ptr,
 		return -EINVAL;
 	}
 
-	if (((uintptr_t)req_ptr->resp_buf <
-			data_ptr->client.user_virt_sb_base) ||
-		((uintptr_t)req_ptr->resp_buf >=
-			(data_ptr->client.user_virt_sb_base +
-			data_ptr->client.sb_length))){
-		pr_err("response buffer address not within shared bufffer\n");
+	if (data_ptr->client.sb_length <
+			sizeof(struct qseecom_rpmb_provision_key)) {
+		pr_err("shared buffer is too small to hold key type\n");
 		return -EINVAL;
 	}
-
 	req_buf = data_ptr->client.sb_virt;
 
 	send_svc_ireq_ptr->qsee_cmd_id = req_ptr->cmd_id;
@@ -2195,36 +2475,6 @@ int __qseecom_process_fsm_key_svc_cmd(struct qseecom_dev_handle *data_ptr,
 		return -EINVAL;
 	}
 
-	if (((uintptr_t)req_ptr->cmd_req_buf <
-			data_ptr->client.user_virt_sb_base) ||
-		((uintptr_t)req_ptr->cmd_req_buf >=
-			(data_ptr->client.user_virt_sb_base +
-			data_ptr->client.sb_length))) {
-		pr_err("cmd buffer address not within shared bufffer\n");
-		return -EINVAL;
-	}
-
-	if (((uintptr_t)req_ptr->resp_buf <
-			data_ptr->client.user_virt_sb_base) ||
-		((uintptr_t)req_ptr->resp_buf >=
-			(data_ptr->client.user_virt_sb_base +
-			data_ptr->client.sb_length))){
-		pr_err("response buffer address not within shared bufffer\n");
-		return -EINVAL;
-	}
-
-	if ((req_ptr->cmd_req_len == 0) || (req_ptr->resp_len == 0) ||
-		req_ptr->cmd_req_len > data_ptr->client.sb_length ||
-		req_ptr->resp_len > data_ptr->client.sb_length) {
-		pr_err("cmd buffer length or response buffer length not valid\n");
-		return -EINVAL;
-	}
-
-	if (req_ptr->cmd_req_len > UINT_MAX - req_ptr->resp_len) {
-		pr_err("Integer overflow detected in req_len & rsp_len, exiting now\n");
-		return -EINVAL;
-	}
-
 	reqd_len_sb_in = req_ptr->cmd_req_len + req_ptr->resp_len;
 	if (reqd_len_sb_in > data_ptr->client.sb_length) {
 		pr_err("Not enough memory to fit cmd_buf and resp_buf. ");
@@ -2246,28 +2496,11 @@ int __qseecom_process_fsm_key_svc_cmd(struct qseecom_dev_handle *data_ptr,
 	return ret;
 }
 
-static int qseecom_send_service_cmd(struct qseecom_dev_handle *data,
-				void __user *argp)
+static int __validate_send_service_cmd_inputs(struct qseecom_dev_handle *data,
+				struct qseecom_send_svc_cmd_req *req)
 {
-	int ret = 0;
-	struct qseecom_client_send_service_ireq send_svc_ireq;
-	struct qseecom_client_send_fsm_key_req send_fsm_key_svc_ireq;
-	struct qseecom_command_scm_resp resp;
-	struct qseecom_send_svc_cmd_req req;
-	void   *send_req_ptr;
-	size_t req_buf_size;
-
-	/*struct qseecom_command_scm_resp resp;*/
-
-	if (copy_from_user(&req,
-				(void __user *)argp,
-				sizeof(req))) {
-		pr_err("copy_from_user failed\n");
-		return -EFAULT;
-	}
-
-	if ((req.resp_buf == NULL) || (req.cmd_req_buf == NULL)) {
-		pr_err("cmd buffer or response buffer is null\n");
+	if (!req || !req->resp_buf || !req->cmd_req_buf) {
+		pr_err("req or cmd buffer or response buffer is null\n");
 		return -EINVAL;
 	}
 
@@ -2291,11 +2524,92 @@ static int qseecom_send_service_cmd(struct qseecom_dev_handle *data,
 		return -EINVAL;
 	}
 
+	if (((uintptr_t)req->cmd_req_buf <
+				data->client.user_virt_sb_base) ||
+		((uintptr_t)req->cmd_req_buf >=
+		(data->client.user_virt_sb_base + data->client.sb_length))) {
+		pr_err("cmd buffer address not within shared bufffer\n");
+		return -EINVAL;
+	}
+	if (((uintptr_t)req->resp_buf <
+				data->client.user_virt_sb_base)  ||
+		((uintptr_t)req->resp_buf >=
+		(data->client.user_virt_sb_base + data->client.sb_length))) {
+		pr_err("response buffer address not within shared bufffer\n");
+		return -EINVAL;
+	}
+	if ((req->cmd_req_len == 0) || (req->resp_len == 0) ||
+		(req->cmd_req_len > data->client.sb_length) ||
+		(req->resp_len > data->client.sb_length)) {
+		pr_err("cmd buf length or response buf length not valid\n");
+		return -EINVAL;
+	}
+	if (req->cmd_req_len > UINT_MAX - req->resp_len) {
+		pr_err("Integer overflow detected in req_len & rsp_len\n");
+		return -EINVAL;
+	}
+
+	if ((req->cmd_req_len + req->resp_len) > data->client.sb_length) {
+		pr_debug("Not enough memory to fit cmd_buf.\n");
+		pr_debug("resp_buf. Required: %u, Available: %zu\n",
+				(req->cmd_req_len + req->resp_len),
+					data->client.sb_length);
+		return -ENOMEM;
+	}
+	if ((uintptr_t)req->cmd_req_buf > (ULONG_MAX - req->cmd_req_len)) {
+		pr_err("Integer overflow in req_len & cmd_req_buf\n");
+		return -EINVAL;
+	}
+	if ((uintptr_t)req->resp_buf > (ULONG_MAX - req->resp_len)) {
+		pr_err("Integer overflow in resp_len & resp_buf\n");
+		return -EINVAL;
+	}
+	if (data->client.user_virt_sb_base >
+					(ULONG_MAX - data->client.sb_length)) {
+		pr_err("Integer overflow in user_virt_sb_base & sb_length\n");
+		return -EINVAL;
+	}
+	if ((((uintptr_t)req->cmd_req_buf + req->cmd_req_len) >
+		((uintptr_t)data->client.user_virt_sb_base +
+					data->client.sb_length)) ||
+		(((uintptr_t)req->resp_buf + req->resp_len) >
+		((uintptr_t)data->client.user_virt_sb_base +
+					data->client.sb_length))) {
+		pr_err("cmd buf or resp buf is out of shared buffer region\n");
+		return -EINVAL;
+	}
+	return 0;
+}
+
+static int qseecom_send_service_cmd(struct qseecom_dev_handle *data,
+				void __user *argp)
+{
+	int ret = 0;
+	struct qseecom_client_send_service_ireq send_svc_ireq;
+	struct qseecom_client_send_fsm_key_req send_fsm_key_svc_ireq;
+	struct qseecom_command_scm_resp resp;
+	struct qseecom_send_svc_cmd_req req;
+	void   *send_req_ptr;
+	size_t req_buf_size;
+
+	/*struct qseecom_command_scm_resp resp;*/
+
+	if (copy_from_user(&req,
+				(void __user *)argp,
+				sizeof(req))) {
+		pr_err("copy_from_user failed\n");
+		return -EFAULT;
+	}
+
+	if (__validate_send_service_cmd_inputs(data, &req))
+		return -EINVAL;
+
 	data->type = QSEECOM_SECURE_SERVICE;
 
 	switch (req.cmd_id) {
 	case QSEOS_RPMB_PROVISION_KEY_COMMAND:
 	case QSEOS_RPMB_ERASE_COMMAND:
+	case QSEOS_RPMB_CHECK_PROV_STATUS_COMMAND:
 		send_req_ptr = &send_svc_ireq;
 		req_buf_size = sizeof(send_svc_ireq);
 		if (__qseecom_process_rpmb_svc_cmd(data, &req,
@@ -2306,6 +2620,18 @@ static int qseecom_send_service_cmd(struct qseecom_dev_handle *data,
 	case QSEOS_FSM_LTEOTA_REQ_RSP_CMD:
 	case QSEOS_FSM_IKE_REQ_CMD:
 	case QSEOS_FSM_IKE_REQ_RSP_CMD:
+	case QSEOS_FSM_LTE_INIT_DB:
+	case QSEOS_FSM_LTE_STORE_KENB:
+	case QSEOS_FSM_LTE_GEN_KEYS:
+	case QSEOS_FSM_LTE_GET_KEY_OFFSETS:
+	case QSEOS_FSM_LTE_GEN_KENB_STAR:
+	case QSEOS_FSM_LTE_GET_KENB_STAR:
+	case QSEOS_FSM_LTE_STORE_NH:
+	case QSEOS_FSM_LTE_DELETE_NH:
+	case QSEOS_FSM_LTE_DELETE_KEYS:
+	case QSEOS_FSM_IKE_CMD_SIGN:
+	case QSEOS_FSM_IKE_CMD_PROV_KEY:
+	case QSEOS_FSM_IKE_CMD_ENCRYPT_PRIVATE_KEY:
 	case QSEOS_FSM_OEM_FUSE_WRITE_ROW:
 	case QSEOS_FSM_OEM_FUSE_READ_ROW:
 		send_req_ptr = &send_fsm_key_svc_ireq;
@@ -2333,15 +2659,16 @@ static int qseecom_send_service_cmd(struct qseecom_dev_handle *data,
 		}
 	}
 
-	msm_ion_do_cache_op(qseecom.ion_clnt, data->client.ihandle,
+	ret = msm_ion_do_cache_op(qseecom.ion_clnt, data->client.ihandle,
 				data->client.sb_virt, data->client.sb_length,
 				ION_IOC_CLEAN_INV_CACHES);
+	if (ret) {
+		pr_err("cache operation failed %d\n", ret);
+		goto exit;
+	}
 	ret = qseecom_scm_call(SCM_SVC_TZSCHEDULER, 1,
 				(const void *)send_req_ptr,
 				req_buf_size, &resp, sizeof(resp));
-	msm_ion_do_cache_op(qseecom.ion_clnt, data->client.ihandle,
-				data->client.sb_virt, data->client.sb_length,
-				ION_IOC_INV_CACHES);
 	if (ret) {
 		pr_err("qseecom_scm_call failed with err: %d\n", ret);
 		if (!qseecom.support_bus_scaling) {
@@ -2353,20 +2680,41 @@ static int qseecom_send_service_cmd(struct qseecom_dev_handle *data,
 		}
 		goto exit;
 	}
-
+	ret = msm_ion_do_cache_op(qseecom.ion_clnt, data->client.ihandle,
+				data->client.sb_virt, data->client.sb_length,
+				ION_IOC_INV_CACHES);
+	if (ret) {
+		pr_err("cache operation failed %d\n", ret);
+		goto exit;
+	}
 	switch (resp.result) {
 	case QSEOS_RESULT_SUCCESS:
 		break;
 	case QSEOS_RESULT_INCOMPLETE:
-		pr_err("qseos_result_incomplete\n");
+		pr_debug("qseos_result_incomplete\n");
 		ret = __qseecom_process_incomplete_cmd(data, &resp);
 		if (ret) {
-			pr_err("process_incomplete_cmd fail: err: %d\n",
-				ret);
+			pr_err("process_incomplete_cmd fail with result: %d\n",
+				resp.result);
+		}
+		if (req.cmd_id == QSEOS_RPMB_CHECK_PROV_STATUS_COMMAND) {
+			pr_warn("RPMB key status is 0x%x\n", resp.result);
+			*(uint32_t *)req.resp_buf = resp.result;
+			ret = 0;
+		}
+		if (req.cmd_id == QSEOS_RPMB_CHECK_PROV_STATUS_COMMAND) {
+			pr_warn("RPMB key status is 0x%x\n", resp.result);
+			if (put_user(resp.result,
+				(uint32_t __user *)req.resp_buf)) {
+				ret = -EINVAL;
+				goto exit;
+			}
+			ret = 0;
 		}
 		break;
 	case QSEOS_RESULT_FAILURE:
-		pr_err("process_incomplete_cmd failed err: %d\n", ret);
+		pr_err("scm call failed with resp.result: %d\n", resp.result);
+		ret = -EINVAL;
 		break;
 	default:
 		pr_err("Response result %d not supported\n",
@@ -2465,6 +2813,8 @@ int __qseecom_process_reentrancy(struct qseecom_command_scm_resp *resp,
 	struct qseecom_continue_blocked_request_ireq ireq;
 	struct qseecom_command_scm_resp continue_resp;
 	sigset_t new_sigset, old_sigset;
+	uint32_t smc_id = 0;
+	struct scm_desc desc = {0};
 
 	switch (resp->result) {
 	case QSEOS_RESULT_BLOCKED_ON_LISTENER:
@@ -2492,24 +2842,21 @@ int __qseecom_process_reentrancy(struct qseecom_command_scm_resp *resp,
 					break;
 				}
 			} while (1);
-			mutex_lock(&app_access_lock);
-			sigprocmask(SIG_SETMASK, &old_sigset, NULL);
 			ptr_app->app_blocked = false;
+			mutex_lock(&app_access_lock);
 			qseecom.app_block_ref_cnt--;
 		}
-		/* notify the blocked app that listener is available */
+		/* notify the blocked app that listener is released */
 		pr_debug("Lsntr %d is available, unblock app(%d) %s in TZ\n",
 			resp->data, data->client.app_id,
 			data->client.app_name);
-		ireq.qsee_cmd_id = QSEOS_CONTINUE_BLOCKED_REQ_COMMAND;
-		ireq.app_id = data->client.app_id;
-		ret = qseecom_scm_call(SCM_SVC_TZSCHEDULER, 1,
-				&ireq, sizeof(ireq),
-				&continue_resp, sizeof(continue_resp));
+		smc_id = TZ_OS_CONTINUE_BLOCKED_REQUEST_ID;
+		desc.arginfo = TZ_OS_CONTINUE_BLOCKED_REQUEST_ID_PARAM_ID;
+		desc.args[0] = data->client.app_id;
+		ret = scm_call2(smc_id, &desc);
 		if (ret) {
-			pr_err("scm_call for continue blocked req for app(%d) %s failed, ret %d\n",
-				data->client.app_id,
-				data->client.app_name, ret);
+			pr_err("scm_call for continue blocked req fail, ret %d\n",
+				ret);
 			return ret;
 		}
 		/*
@@ -2542,8 +2889,8 @@ static int __qseecom_send_cmd(struct qseecom_dev_handle *data,
 {
 	int ret = 0;
 	u32 reqd_len_sb_in = 0;
-	struct qseecom_client_send_data_ireq send_data_req;
-	struct qseecom_client_send_data_64bit_ireq send_data_req_64bit;
+	struct qseecom_client_send_data_ireq send_data_req = {0};
+	struct qseecom_client_send_data_64bit_ireq send_data_req_64bit = {0};
 	struct qseecom_command_scm_resp resp;
 	unsigned long flags;
 	struct qseecom_registered_app_list *ptr_app;
@@ -2551,6 +2898,7 @@ static int __qseecom_send_cmd(struct qseecom_dev_handle *data,
 	int name_len = 0;
 	void *cmd_buf = NULL;
 	size_t cmd_len;
+	struct sglist_info *table = data->sglistinfo_ptr;
 
 	reqd_len_sb_in = req->cmd_req_len + req->resp_len;
 	/* find app_id & img_name from list */
@@ -2575,7 +2923,6 @@ static int __qseecom_send_cmd(struct qseecom_dev_handle *data,
 	}
 
 	if (qseecom.qsee_version < QSEE_VERSION_40) {
-		send_data_req.qsee_cmd_id = QSEOS_CLIENT_SEND_DATA_COMMAND;
 		send_data_req.app_id = data->client.app_id;
 		send_data_req.req_ptr = (uint32_t)(__qseecom_uvirt_to_kphys(
 					data, (uintptr_t)req->cmd_req_buf));
@@ -2583,12 +2930,15 @@ static int __qseecom_send_cmd(struct qseecom_dev_handle *data,
 		send_data_req.rsp_ptr = (uint32_t)(__qseecom_uvirt_to_kphys(
 					data, (uintptr_t)req->resp_buf));
 		send_data_req.rsp_len = req->resp_len;
+		send_data_req.sglistinfo_ptr =
+				(uint32_t)virt_to_phys(table);
+		send_data_req.sglistinfo_len = SGLISTINFO_TABLE_SIZE;
+		dmac_flush_range((void *)table,
+				(void *)table + SGLISTINFO_TABLE_SIZE);
 		cmd_buf = (void *)&send_data_req;
 		cmd_len = sizeof(struct qseecom_client_send_data_ireq);
 #ifndef CONFIG_ARCH_MSM8974
 	} else {
-		send_data_req_64bit.qsee_cmd_id =
-					QSEOS_CLIENT_SEND_DATA_COMMAND;
 		send_data_req_64bit.app_id = data->client.app_id;
 		send_data_req_64bit.req_ptr = __qseecom_uvirt_to_kphys(data,
 					(uintptr_t)req->cmd_req_buf);
@@ -2610,15 +2960,31 @@ static int __qseecom_send_cmd(struct qseecom_dev_handle *data,
 				send_data_req_64bit.rsp_len);
 			return -EFAULT;
 		}
+		send_data_req_64bit.sglistinfo_ptr =
+				(uint64_t)virt_to_phys(table);
+		send_data_req_64bit.sglistinfo_len = SGLISTINFO_TABLE_SIZE;
+		dmac_flush_range((void *)table,
+				(void *)table + SGLISTINFO_TABLE_SIZE);
 		cmd_buf = (void *)&send_data_req_64bit;
 		cmd_len = sizeof(struct qseecom_client_send_data_64bit_ireq);
 #endif
 	}
 
-	msm_ion_do_cache_op(qseecom.ion_clnt, data->client.ihandle,
+	if (qseecom.whitelist_support == false || data->use_legacy_cmd == true)
+		*(uint32_t *)cmd_buf = QSEOS_CLIENT_SEND_DATA_COMMAND;
+	else
+		*(uint32_t *)cmd_buf = QSEOS_CLIENT_SEND_DATA_COMMAND_WHITELIST;
+
+	ret = msm_ion_do_cache_op(qseecom.ion_clnt, data->client.ihandle,
 					data->client.sb_virt,
 					reqd_len_sb_in,
 					ION_IOC_CLEAN_INV_CACHES);
+	if (ret) {
+		pr_err("cache operation failed %d\n", ret);
+		return ret;
+	}
+
+	__qseecom_reentrancy_check_if_this_app_blocked(ptr_app);
 
 	__qseecom_reentrancy_check_if_this_app_blocked(ptr_app);
 
@@ -2649,9 +3015,11 @@ static int __qseecom_send_cmd(struct qseecom_dev_handle *data,
 			}
 		}
 	}
-	msm_ion_do_cache_op(qseecom.ion_clnt, data->client.ihandle,
+	ret = msm_ion_do_cache_op(qseecom.ion_clnt, data->client.ihandle,
 				data->client.sb_virt, data->client.sb_length,
 				ION_IOC_INV_CACHES);
+	if (ret)
+		pr_err("cache operation failed %d\n", ret);
 	return ret;
 }
 
@@ -2715,6 +3083,8 @@ static int __qseecom_update_cmd_buf(void *msg, bool cleanup,
 	struct qseecom_send_modfd_cmd_req *req = NULL;
 	struct qseecom_send_modfd_listener_resp *lstnr_resp = NULL;
 	struct qseecom_registered_listener_list *this_lstnr = NULL;
+	uint32_t offset;
+	struct sg_table *sg_ptr;
 
 	if ((data->type != QSEECOM_LISTENER_SERVICE) &&
 			(data->type != QSEECOM_CLIENT_APP))
@@ -2736,7 +3106,6 @@ static int __qseecom_update_cmd_buf(void *msg, bool cleanup,
 	}
 
 	for (i = 0; i < MAX_ION_FD; i++) {
-		struct sg_table *sg_ptr = NULL;
 		if ((data->type != QSEECOM_LISTENER_SERVICE) &&
 						(req->ifd_data[i].fd > 0)) {
 			ihandle = ion_import_dma_buf(qseecom.ion_clnt,
@@ -2762,7 +3131,7 @@ static int __qseecom_update_cmd_buf(void *msg, bool cleanup,
 		}
 		/* Populate the cmd data structure with the phys_addr */
 		sg_ptr = ion_sg_table(qseecom.ion_clnt, ihandle);
-		if (sg_ptr == NULL) {
+		if (IS_ERR_OR_NULL(sg_ptr)) {
 			pr_err("IOn client could not retrieve sg table\n");
 			goto err;
 		}
@@ -2880,14 +3249,37 @@ static int __qseecom_update_cmd_buf(void *msg, bool cleanup,
 					goto err;
 			}
 		}
-		if (cleanup)
+
+		if (cleanup) {
 			msm_ion_do_cache_op(qseecom.ion_clnt,
 					ihandle, NULL, len,
 					ION_IOC_INV_CACHES);
-		else
+		} else {
 			msm_ion_do_cache_op(qseecom.ion_clnt,
 					ihandle, NULL, len,
 					ION_IOC_CLEAN_INV_CACHES);
+			if (data->type == QSEECOM_CLIENT_APP) {
+				offset = req->ifd_data[i].cmd_buf_offset;
+				data->sglistinfo_ptr[i].indexAndFlags =
+					SGLISTINFO_SET_INDEX_FLAG(
+					(sg_ptr->nents == 1), 0, offset);
+				data->sglistinfo_ptr[i].sizeOrCount =
+					(sg_ptr->nents == 1) ?
+					sg->length : sg_ptr->nents;
+				data->sglist_cnt = i + 1;
+			} else {
+				offset = (lstnr_resp->ifd_data[i].cmd_buf_offset
+					+ (uintptr_t)lstnr_resp->resp_buf_ptr -
+					(uintptr_t)this_lstnr->sb_virt);
+				this_lstnr->sglistinfo_ptr[i].indexAndFlags =
+					SGLISTINFO_SET_INDEX_FLAG(
+					(sg_ptr->nents == 1), 0, offset);
+				this_lstnr->sglistinfo_ptr[i].sizeOrCount =
+					(sg_ptr->nents == 1) ?
+					sg->length : sg_ptr->nents;
+				this_lstnr->sglist_cnt = i + 1;
+			}
+		}
 		/* Deallocate the handle */
 		if (!IS_ERR_OR_NULL(ihandle))
 			ion_free(qseecom.ion_clnt, ihandle);
@@ -2897,6 +3289,53 @@ err:
 	if (!IS_ERR_OR_NULL(ihandle))
 		ion_free(qseecom.ion_clnt, ihandle);
 	return -ENOMEM;
+}
+
+static int __qseecom_allocate_sg_list_buffer(struct qseecom_dev_handle *data,
+		char *field, uint32_t fd_idx, struct sg_table *sg_ptr)
+{
+	struct scatterlist *sg = sg_ptr->sgl;
+	struct qseecom_sg_entry_64bit *sg_entry;
+	struct qseecom_sg_list_buf_hdr_64bit *buf_hdr;
+	void *buf;
+	uint i;
+	size_t size;
+	dma_addr_t coh_pmem;
+
+	if (fd_idx >= MAX_ION_FD) {
+		pr_err("fd_idx [%d] is invalid\n", fd_idx);
+		return -ENOMEM;
+	}
+	buf_hdr = (struct qseecom_sg_list_buf_hdr_64bit *)field;
+	memset((void *)buf_hdr, 0, QSEECOM_SG_LIST_BUF_HDR_SZ_64BIT);
+	/* Allocate a contiguous kernel buffer */
+	size = sg_ptr->nents * SG_ENTRY_SZ_64BIT;
+	size = (size + PAGE_SIZE) & PAGE_MASK;
+	buf = dma_alloc_coherent(qseecom.pdev,
+			size, &coh_pmem, GFP_KERNEL);
+	if (buf == NULL) {
+		pr_err("failed to alloc memory for sg buf\n");
+		return -ENOMEM;
+	}
+	/* update qseecom_sg_list_buf_hdr_64bit */
+	buf_hdr->version = QSEECOM_SG_LIST_BUF_FORMAT_VERSION_2;
+	buf_hdr->new_buf_phys_addr = coh_pmem;
+	buf_hdr->nents_total = sg_ptr->nents;
+	/* save the left sg entries into new allocated buf */
+	sg_entry = (struct qseecom_sg_entry_64bit *)buf;
+	for (i = 0; i < sg_ptr->nents; i++) {
+		sg_entry->phys_addr = (uint64_t)sg_dma_address(sg);
+		sg_entry->len = sg->length;
+		sg_entry++;
+		sg = sg_next(sg);
+	}
+
+	data->client.sec_buf_fd[fd_idx].is_sec_buf_fd = true;
+	data->client.sec_buf_fd[fd_idx].vbase = buf;
+	data->client.sec_buf_fd[fd_idx].pbase = coh_pmem;
+	data->client.sec_buf_fd[fd_idx].size = size;
+
+	return 0;
 }
 
 static int __qseecom_update_cmd_buf_64(void *msg, bool cleanup,
@@ -2911,6 +3350,8 @@ static int __qseecom_update_cmd_buf_64(void *msg, bool cleanup,
 	struct qseecom_send_modfd_cmd_req *req = NULL;
 	struct qseecom_send_modfd_listener_resp *lstnr_resp = NULL;
 	struct qseecom_registered_listener_list *this_lstnr = NULL;
+	uint32_t offset;
+	struct sg_table *sg_ptr;
 
 	if ((data->type != QSEECOM_LISTENER_SERVICE) &&
 			(data->type != QSEECOM_CLIENT_APP))
@@ -2932,7 +3373,6 @@ static int __qseecom_update_cmd_buf_64(void *msg, bool cleanup,
 	}
 
 	for (i = 0; i < MAX_ION_FD; i++) {
-		struct sg_table *sg_ptr = NULL;
 		if ((data->type != QSEECOM_LISTENER_SERVICE) &&
 						(req->ifd_data[i].fd > 0)) {
 			ihandle = ion_import_dma_buf(qseecom.ion_clnt,
@@ -2967,10 +3407,27 @@ static int __qseecom_update_cmd_buf_64(void *msg, bool cleanup,
 			goto err;
 		}
 		if (sg_ptr->nents > QSEECOM_MAX_SG_ENTRY) {
-			pr_err("Num of scattered entries");
-			pr_err(" (%d) is greater than max supported %d\n",
+			pr_warn("Num of scattered entries");
+			pr_warn(" (%d) is greater than %d\n",
 				sg_ptr->nents, QSEECOM_MAX_SG_ENTRY);
-			goto err;
+			if (cleanup) {
+				if (data->client.sec_buf_fd[i].is_sec_buf_fd &&
+					data->client.sec_buf_fd[i].vbase)
+					dma_free_coherent(qseecom.pdev,
+					data->client.sec_buf_fd[i].size,
+					data->client.sec_buf_fd[i].vbase,
+					data->client.sec_buf_fd[i].pbase);
+			} else {
+				ret = __qseecom_allocate_sg_list_buffer(data,
+						field, i, sg_ptr);
+				if (ret) {
+					pr_err("Failed to allocate sg list buffer\n");
+					goto err;
+				}
+			}
+			len = QSEECOM_SG_LIST_BUF_HDR_SZ_64BIT;
+			sg = sg_ptr->sgl;
+			goto cleanup;
 		}
 		sg = sg_ptr->sgl;
 		if (sg_ptr->nents == 1) {
@@ -2990,10 +3447,10 @@ static int __qseecom_update_cmd_buf_64(void *msg, bool cleanup,
 					(req->ifd_data[i].fd > 0)) {
 
 				if ((req->cmd_req_len <
-					 SG_ENTRY_SZ * sg_ptr->nents) ||
+					 SG_ENTRY_SZ_64BIT * sg_ptr->nents) ||
 					(req->ifd_data[i].cmd_buf_offset >
-						(req->cmd_req_len -
-						SG_ENTRY_SZ * sg_ptr->nents))) {
+					(req->cmd_req_len -
+					SG_ENTRY_SZ_64BIT * sg_ptr->nents))) {
 					pr_err("Invalid offset = 0x%x\n",
 					req->ifd_data[i].cmd_buf_offset);
 					goto err;
@@ -3003,10 +3460,10 @@ static int __qseecom_update_cmd_buf_64(void *msg, bool cleanup,
 					(lstnr_resp->ifd_data[i].fd > 0)) {
 
 				if ((lstnr_resp->resp_len <
-						SG_ENTRY_SZ * sg_ptr->nents) ||
+					SG_ENTRY_SZ_64BIT * sg_ptr->nents) ||
 				(lstnr_resp->ifd_data[i].cmd_buf_offset >
 						(lstnr_resp->resp_len -
-						SG_ENTRY_SZ * sg_ptr->nents))) {
+					SG_ENTRY_SZ_64BIT * sg_ptr->nents))) {
 					goto err;
 				}
 			}
@@ -3022,20 +3479,50 @@ static int __qseecom_update_cmd_buf_64(void *msg, bool cleanup,
 				sg = sg_next(sg);
 			}
 		}
-		if (cleanup)
+cleanup:
+		if (cleanup) {
 			msm_ion_do_cache_op(qseecom.ion_clnt,
 					ihandle, NULL, len,
 					ION_IOC_INV_CACHES);
-		else
+		} else {
 			msm_ion_do_cache_op(qseecom.ion_clnt,
 					ihandle, NULL, len,
 					ION_IOC_CLEAN_INV_CACHES);
+			if (data->type == QSEECOM_CLIENT_APP) {
+				offset = req->ifd_data[i].cmd_buf_offset;
+				data->sglistinfo_ptr[i].indexAndFlags =
+					SGLISTINFO_SET_INDEX_FLAG(
+					(sg_ptr->nents == 1), 1, offset);
+				data->sglistinfo_ptr[i].sizeOrCount =
+					(sg_ptr->nents == 1) ?
+					sg->length : sg_ptr->nents;
+				data->sglist_cnt = i + 1;
+			} else {
+				offset = (lstnr_resp->ifd_data[i].cmd_buf_offset
+					+ (uintptr_t)lstnr_resp->resp_buf_ptr -
+					(uintptr_t)this_lstnr->sb_virt);
+				this_lstnr->sglistinfo_ptr[i].indexAndFlags =
+					SGLISTINFO_SET_INDEX_FLAG(
+					(sg_ptr->nents == 1), 1, offset);
+				this_lstnr->sglistinfo_ptr[i].sizeOrCount =
+					(sg_ptr->nents == 1) ?
+					sg->length : sg_ptr->nents;
+				this_lstnr->sglist_cnt = i + 1;
+			}
+		}
 		/* Deallocate the handle */
 		if (!IS_ERR_OR_NULL(ihandle))
 			ion_free(qseecom.ion_clnt, ihandle);
 	}
 	return ret;
 err:
+	for (i = 0; i < MAX_ION_FD; i++)
+		if (data->client.sec_buf_fd[i].is_sec_buf_fd &&
+			data->client.sec_buf_fd[i].vbase)
+			dma_free_coherent(qseecom.pdev,
+				data->client.sec_buf_fd[i].size,
+				data->client.sec_buf_fd[i].vbase,
+				data->client.sec_buf_fd[i].pbase);
 	if (!IS_ERR_OR_NULL(ihandle))
 		ion_free(qseecom.ion_clnt, ihandle);
 	return -ENOMEM;
@@ -3223,7 +3710,7 @@ static bool __qseecom_is_fw_image_valid(const struct firmware *fw_entry)
 	return true;
 }
 
-static int __qseecom_get_fw_size(char *appname, uint32_t *fw_size,
+static int __qseecom_get_fw_size(const char *appname, uint32_t *fw_size,
 					uint32_t *app_arch)
 {
 	int ret = -1;
@@ -3265,14 +3752,21 @@ static int __qseecom_get_fw_size(char *appname, uint32_t *fw_size,
 	}
 	pr_debug("QSEE %s app, arch %u\n", appname, *app_arch);
 	release_firmware(fw_entry);
+	fw_entry = NULL;
 	for (i = 0; i < num_images; i++) {
 		memset(fw_name, 0, sizeof(fw_name));
 		snprintf(fw_name, ARRAY_SIZE(fw_name), "%s.b%02d", appname, i);
 		ret = request_firmware(&fw_entry, fw_name, qseecom.pdev);
 		if (ret)
 			goto err;
+		if (*fw_size > U32_MAX - fw_entry->size) {
+			pr_err("QSEE %s app file size overflow\n", appname);
+			ret = -EINVAL;
+			goto err;
+		}
 		*fw_size += fw_entry->size;
 		release_firmware(fw_entry);
+		fw_entry = NULL;
 	}
 
 	return ret;
@@ -3283,8 +3777,9 @@ err:
 	return ret;
 }
 
-static int __qseecom_get_fw_data(char *appname, u8 *img_data,
-					struct qseecom_load_app_ireq *load_req)
+static int __qseecom_get_fw_data(const char *appname, u8 *img_data,
+				uint32_t fw_size,
+				struct qseecom_load_app_ireq *load_req)
 {
 	int ret = -1;
 	int i = 0, rc = 0;
@@ -3304,6 +3799,12 @@ static int __qseecom_get_fw_data(char *appname, u8 *img_data,
 	}
 
 	load_req->img_len = fw_entry->size;
+	if (load_req->img_len > fw_size) {
+		pr_err("app %s size %zu is larger than buf size %u\n",
+			appname, fw_entry->size, fw_size);
+		ret = -EINVAL;
+		goto err;
+	}
 	memcpy(img_data_ptr, fw_entry->data, fw_entry->size);
 	img_data_ptr = img_data_ptr + fw_entry->size;
 	load_req->mdt_len = fw_entry->size; /*Get MDT LEN*/
@@ -3322,6 +3823,7 @@ static int __qseecom_get_fw_data(char *appname, u8 *img_data,
 		goto err;
 	}
 	release_firmware(fw_entry);
+	fw_entry = NULL;
 	for (i = 0; i < num_images; i++) {
 		snprintf(fw_name, ARRAY_SIZE(fw_name), "%s.b%02d", appname, i);
 		ret = request_firmware(&fw_entry, fw_name,  qseecom.pdev);
@@ -3329,10 +3831,17 @@ static int __qseecom_get_fw_data(char *appname, u8 *img_data,
 			pr_err("Failed to locate blob %s\n", fw_name);
 			goto err;
 		}
+		if ((fw_entry->size > U32_MAX - load_req->img_len) ||
+			(fw_entry->size + load_req->img_len > fw_size)) {
+			pr_err("Invalid file size for %s\n", fw_name);
+			ret = -EINVAL;
+			goto err;
+		}
 		memcpy(img_data_ptr, fw_entry->data, fw_entry->size);
 		img_data_ptr = img_data_ptr + fw_entry->size;
 		load_req->img_len += fw_entry->size;
 		release_firmware(fw_entry);
+		fw_entry = NULL;
 	}
 	return ret;
 err:
@@ -3441,7 +3950,7 @@ static int __qseecom_load_fw(struct qseecom_dev_handle *data, char *appname)
 	if (ret)
 		return ret;
 
-	ret = __qseecom_get_fw_data(appname, img_data, &load_req);
+	ret = __qseecom_get_fw_data(appname, img_data, fw_size, &load_req);
 	if (ret) {
 		ret = -EIO;
 		goto exit_free_img_data;
@@ -3482,10 +3991,15 @@ static int __qseecom_load_fw(struct qseecom_dev_handle *data, char *appname)
 		goto exit_unregister_bus_bw_need;
 	}
 
-	msm_ion_do_cache_op(qseecom.ion_clnt, ihandle,
+	ret = msm_ion_do_cache_op(qseecom.ion_clnt, ihandle,
 				img_data, fw_size,
 				ION_IOC_CLEAN_INV_CACHES);
+	if (ret) {
+		pr_err("cache operation failed %d\n", ret);
+		goto exit_disable_clk_vote;
+	}
 
+	__qseecom_reentrancy_check_if_no_app_blocked();
 	/* SCM_CALL to load the image */
 	ret = qseecom_scm_call(SCM_SVC_TZSCHEDULER, 1, cmd_buf, cmd_len,
 			&resp, sizeof(resp));
@@ -3562,7 +4076,7 @@ static int qseecom_load_commonlib_image(struct qseecom_dev_handle *data,
 	if (ret)
 		return -EIO;
 
-	ret = __qseecom_get_fw_data(cmnlib_name, img_data, &load_req);
+	ret = __qseecom_get_fw_data(cmnlib_name, img_data, fw_size, &load_req);
 	if (ret) {
 		ret = -EIO;
 		goto exit_free_img_data;
@@ -3598,9 +4112,13 @@ static int qseecom_load_commonlib_image(struct qseecom_dev_handle *data,
 		goto exit_unregister_bus_bw_need;
 	}
 
-	msm_ion_do_cache_op(qseecom.ion_clnt, qseecom.cmnlib_ion_handle,
+	ret = msm_ion_do_cache_op(qseecom.ion_clnt, qseecom.cmnlib_ion_handle,
 				img_data, fw_size,
 				ION_IOC_CLEAN_INV_CACHES);
+	if (ret) {
+		pr_err("cache operation failed %d\n", ret);
+		goto exit_disable_clk_vote;
+	}
 
 	/* SCM_CALL to load the image */
 	ret = qseecom_scm_call(SCM_SVC_TZSCHEDULER, 1, cmd_buf, cmd_len,
@@ -3655,6 +4173,7 @@ static int qseecom_unload_commonlib_image(void)
 	/* Populate the remaining parameters */
 	unload_req.qsee_cmd_id = QSEOS_UNLOAD_SERV_IMAGE_COMMAND;
 
+	__qseecom_reentrancy_check_if_no_app_blocked();
 	/* SCM_CALL to load the image */
 	ret = qseecom_scm_call(SCM_SVC_TZSCHEDULER, 1, &unload_req,
 			sizeof(struct qseecom_unload_lib_image_ireq),
@@ -3785,6 +4304,7 @@ int qseecom_start_app(struct qseecom_handle **handle,
 		strlcpy(entry->app_name, app_name, MAX_APP_NAME_SIZE);
 		if (__qseecom_get_fw_size(app_name, &fw_size, &app_arch)) {
 			ret = -EIO;
+			kfree(entry);
 			goto err;
 		}
 #ifndef CONFIG_ARCH_MSM8974
@@ -3809,6 +4329,11 @@ int qseecom_start_app(struct qseecom_handle **handle,
 	/* Populate the structure for sending scm call to load image */
 	data->client.sb_virt = (char *) ion_map_kernel(qseecom.ion_clnt,
 							data->client.ihandle);
+	if (IS_ERR_OR_NULL(data->client.sb_virt)) {
+		pr_err("ION memory mapping for client shared buf failed\n");
+		ret = -ENOMEM;
+		goto err;
+	}
 	data->client.user_virt_sb_base = (uintptr_t)data->client.sb_virt;
 	data->client.sb_phys = (phys_addr_t)pa;
 	(*handle)->dev = (void *)data;
@@ -3932,8 +4457,11 @@ int qseecom_send_command(struct qseecom_handle *handle, void *send_buf,
 		}
 		perf_enabled = true;
 	}
+	if (!strcmp(data->client.app_name, "securemm"))
+		data->use_legacy_cmd = true;
 
 	ret = __qseecom_send_cmd(data, &req);
+	data->use_legacy_cmd = false;
 	if (qseecom.support_bus_scaling)
 		__qseecom_add_bw_scale_down_timer(
 			QSEECOM_SEND_CMD_CRYPTO_TIMEOUT);
@@ -4008,41 +4536,80 @@ static int qseecom_reentrancy_send_resp(struct qseecom_dev_handle *data)
 	return 0;
 }
 
+static int __validate_send_modfd_resp_inputs(struct qseecom_dev_handle *data,
+			struct qseecom_send_modfd_listener_resp *resp,
+			struct qseecom_registered_listener_list *this_lstnr)
+{
+	int i;
+
+	if (!data || !resp || !this_lstnr) {
+		pr_err("listener handle or resp msg is null\n");
+		return -EINVAL;
+	}
+
+	if (resp->resp_buf_ptr == NULL) {
+		pr_err("resp buffer is null\n");
+		return -EINVAL;
+	}
+	/* validate resp buf length */
+	if ((resp->resp_len == 0) ||
+			(resp->resp_len > this_lstnr->sb_length)) {
+		pr_err("resp buf length %d not valid\n", resp->resp_len);
+		return -EINVAL;
+	}
+
+	if ((uintptr_t)resp->resp_buf_ptr > (ULONG_MAX - resp->resp_len)) {
+		pr_err("Integer overflow in resp_len & resp_buf\n");
+		return -EINVAL;
+	}
+	if ((uintptr_t)this_lstnr->user_virt_sb_base >
+					(ULONG_MAX - this_lstnr->sb_length)) {
+		pr_err("Integer overflow in user_virt_sb_base & sb_length\n");
+		return -EINVAL;
+	}
+	/* validate resp buf */
+	if (((uintptr_t)resp->resp_buf_ptr <
+		(uintptr_t)this_lstnr->user_virt_sb_base) ||
+		((uintptr_t)resp->resp_buf_ptr >=
+		((uintptr_t)this_lstnr->user_virt_sb_base +
+				this_lstnr->sb_length)) ||
+		(((uintptr_t)resp->resp_buf_ptr + resp->resp_len) >
+		((uintptr_t)this_lstnr->user_virt_sb_base +
+						this_lstnr->sb_length))) {
+		pr_err("resp buf is out of shared buffer region\n");
+		return -EINVAL;
+	}
+
+	/* validate offsets */
+	for (i = 0; i < MAX_ION_FD; i++) {
+		if (resp->ifd_data[i].cmd_buf_offset >= resp->resp_len) {
+			pr_err("Invalid offset %d = 0x%x\n",
+				i, resp->ifd_data[i].cmd_buf_offset);
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
+
 static int __qseecom_send_modfd_resp(struct qseecom_dev_handle *data,
 				void __user *argp, bool is_64bit_addr)
 {
 	struct qseecom_send_modfd_listener_resp resp;
-	int i;
 	struct qseecom_registered_listener_list *this_lstnr = NULL;
 
 	if (copy_from_user(&resp, argp, sizeof(resp))) {
 		pr_err("copy_from_user failed");
 		return -EINVAL;
 	}
+
 	this_lstnr = __qseecom_find_svc(data->listener.id);
 	if (this_lstnr == NULL)
 		return -EINVAL;
 
-	if (resp.resp_buf_ptr == NULL) {
-		pr_err("Invalid resp_buf_ptr\n");
+	if (__validate_send_modfd_resp_inputs(data, &resp, this_lstnr))
 		return -EINVAL;
-	}
-	/* validate offsets */
-	for (i = 0; i < MAX_ION_FD; i++) {
-		if (resp.ifd_data[i].cmd_buf_offset >= resp.resp_len) {
-			pr_err("Invalid offset %d = 0x%x\n",
-				i, resp.ifd_data[i].cmd_buf_offset);
-			return -EINVAL;
-		}
-	}
 
-	if ((resp.resp_buf_ptr < this_lstnr->user_virt_sb_base) ||
-		((uintptr_t)resp.resp_buf_ptr >=
-		((uintptr_t)this_lstnr->user_virt_sb_base +
-				this_lstnr->sb_length))) {
-		pr_err("resp_buf_ptr address not within shared buffer\n");
-		return -EINVAL;
-	}
 	resp.resp_buf_ptr = this_lstnr->sb_virt +
 		(uintptr_t)(resp.resp_buf_ptr - this_lstnr->user_virt_sb_base);
 
@@ -4085,6 +4652,23 @@ static int qseecom_get_qseos_version(struct qseecom_dev_handle *data,
 	return 0;
 }
 
+static int qseecom_get_qsee_version(struct qseecom_dev_handle *data,
+						void __user *argp)
+{
+	struct qseecom_qsee_version_req req;
+
+	if (copy_from_user(&req, argp, sizeof(req))) {
+		pr_err("copy_from_user failed");
+		return -EINVAL;
+	}
+	req.qsee_version = qseecom.qsee_version;
+	if (copy_to_user(argp, &req, sizeof(req))) {
+		pr_err("copy_to_user failed");
+		return -EINVAL;
+	}
+	return 0;
+}
+
 static int __qseecom_enable_clk(enum qseecom_ce_hw_instance ce)
 {
 	int rc = 0;
@@ -4104,9 +4688,10 @@ static int __qseecom_enable_clk(enum qseecom_ce_hw_instance ce)
 	}
 	mutex_lock(&clk_access_lock);
 
-	if (qclk->clk_access_cnt == ULONG_MAX)
+	if (qclk->clk_access_cnt == ULONG_MAX) {
+		pr_err("clk_access_cnt beyond limitation\n");
 		goto err;
-
+	}
 	if (qclk->clk_access_cnt > 0) {
 		qclk->clk_access_cnt++;
 		mutex_unlock(&clk_access_lock);
@@ -4386,6 +4971,12 @@ static int qseecom_load_external_elf(struct qseecom_dev_handle *data,
 			ret);
 		return ret;
 	}
+	if (load_img_req.mdt_len > len || load_img_req.img_len > len) {
+		pr_err("ion len %zu is smaller than mdt_len %u or img_len %u\n",
+				len, load_img_req.mdt_len,
+				load_img_req.img_len);
+		return ret;
+	}
 	/* Populate the structure for sending scm call to load image */
 	if (qseecom.qsee_version < QSEE_VERSION_40) {
 		load_req.qsee_cmd_id = QSEOS_LOAD_EXTERNAL_ELF_COMMAND;
@@ -4419,8 +5010,13 @@ static int qseecom_load_external_elf(struct qseecom_dev_handle *data,
 		ret = -EIO;
 		goto exit_register_bus_bandwidth_needs;
 	}
-	msm_ion_do_cache_op(qseecom.ion_clnt, ihandle, NULL, len,
+	ret = msm_ion_do_cache_op(qseecom.ion_clnt, ihandle, NULL, len,
 				ION_IOC_CLEAN_INV_CACHES);
+	__qseecom_reentrancy_check_if_no_app_blocked();
+	if (ret) {
+		pr_err("cache operation failed %d\n", ret);
+		goto exit_disable_clock;
+	}
 
 	/*  SCM_CALL to load the external elf */
 	ret = qseecom_scm_call(SCM_SVC_TZSCHEDULER, 1, cmd_buf, cmd_len,
@@ -4484,6 +5080,7 @@ static int qseecom_unload_external_elf(struct qseecom_dev_handle *data)
 	/* Populate the structure for sending scm call to unload image */
 	req.qsee_cmd_id = QSEOS_UNLOAD_EXTERNAL_ELF_COMMAND;
 
+	__qseecom_reentrancy_check_if_no_app_blocked();
 	/* SCM_CALL to unload the external elf */
 	ret = qseecom_scm_call(SCM_SVC_TZSCHEDULER, 1, &req,
 			sizeof(struct qseecom_unload_app_ireq),
@@ -4670,7 +5267,9 @@ static int __qseecom_generate_and_save_key(struct qseecom_dev_handle *data,
 		pr_err("Error:: unsupported usage %d\n", usage);
 		return -EFAULT;
 	}
-	__qseecom_enable_clk(CLK_QSEE);
+	ret = __qseecom_enable_clk(CLK_QSEE);
+	if (ret)
+		return ret;
 
 	ret = qseecom_scm_call(SCM_SVC_TZSCHEDULER, 1,
 				ireq, sizeof(struct qseecom_key_generate_ireq),
@@ -4728,7 +5327,9 @@ static int __qseecom_delete_saved_key(struct qseecom_dev_handle *data,
 		pr_err("Error:: unsupported usage %d\n", usage);
 		return -EFAULT;
 	}
-	__qseecom_enable_clk(CLK_QSEE);
+	ret = __qseecom_enable_clk(CLK_QSEE);
+	if (ret)
+		return ret;
 
 	ret = qseecom_scm_call(SCM_SVC_TZSCHEDULER, 1,
 				ireq, sizeof(struct qseecom_key_delete_ireq),
@@ -4787,10 +5388,15 @@ static int __qseecom_set_clear_ce_key(struct qseecom_dev_handle *data,
 		pr_err("Error:: unsupported usage %d\n", usage);
 		return -EFAULT;
 	}
+	ret = __qseecom_enable_clk(CLK_QSEE);
+	if (ret)
+		return ret;
 
-	__qseecom_enable_clk(CLK_QSEE);
-	if (qseecom.qsee.instance != qseecom.ce_drv.instance)
-		__qseecom_enable_clk(CLK_CE_DRV);
+	if (qseecom.qsee.instance != qseecom.ce_drv.instance) {
+		ret = __qseecom_enable_clk(CLK_CE_DRV);
+		if (ret)
+			return ret;
+	}
 
 	ret = qseecom_scm_call(SCM_SVC_TZSCHEDULER, 1,
 				ireq, sizeof(struct qseecom_key_select_ireq),
@@ -4865,8 +5471,9 @@ static int __qseecom_update_current_key_user_info(
 			pr_err("Error:: unsupported usage %d\n", usage);
 			return -EFAULT;
 	}
-
-	__qseecom_enable_clk(CLK_QSEE);
+	ret = __qseecom_enable_clk(CLK_QSEE);
+	if (ret)
+		return ret;
 
 	ret = qseecom_scm_call(SCM_SVC_TZSCHEDULER, 1,
 		ireq, sizeof(struct qseecom_key_userinfo_update_ireq),
@@ -5300,7 +5907,8 @@ static int qseecom_mdtp_cipher_dip(void __user *argp)
 		}
 
 		if (req.in_buf == NULL || req.out_buf == NULL ||
-			req.in_buf_size == 0 || req.out_buf_size == 0 ||
+			req.in_buf_size == 0 || req.in_buf_size > MAX_DIP ||
+			req.out_buf_size == 0 || req.out_buf_size > MAX_DIP ||
 				req.direction > 1) {
 				pr_err("invalid parameters\n");
 				ret = -EINVAL;
@@ -5343,7 +5951,12 @@ static int qseecom_mdtp_cipher_dip(void __user *argp)
 		desc.args[3] = req.out_buf_size;
 		desc.args[4] = req.direction;
 
+		__qseecom_enable_clk(CLK_QSEE);
+
 		ret = scm_call2(TZ_MDTP_CIPHER_DIP_ID, &desc);
+
+		__qseecom_disable_clk(CLK_QSEE);
+
 		if (ret) {
 			pr_err("scm_call2 failed for SCM_SVC_MDTP, ret=%d\n",
 				ret);
@@ -5580,14 +6193,23 @@ static int __qseecom_update_qteec_req_buf(struct qseecom_qteec_modfd_req *req,
 				*update = (uint32_t)sg_dma_address(sg_ptr->sgl);
 		}
 clean:
-		if (cleanup)
+		if (cleanup) {
 			msm_ion_do_cache_op(qseecom.ion_clnt,
 				ihandle, NULL, sg->length,
 				ION_IOC_INV_CACHES);
-		else
+		} else {
 			msm_ion_do_cache_op(qseecom.ion_clnt,
 				ihandle, NULL, sg->length,
 				ION_IOC_CLEAN_INV_CACHES);
+			data->sglistinfo_ptr[i].indexAndFlags =
+				SGLISTINFO_SET_INDEX_FLAG(
+				(sg_ptr->nents == 1), 0,
+				req->ifd_data[i].cmd_buf_offset);
+			data->sglistinfo_ptr[i].sizeOrCount =
+				(sg_ptr->nents == 1) ?
+				sg->length : sg_ptr->nents;
+			data->sglist_cnt = i + 1;
+		}
 		/* Deallocate the handle */
 		if (!IS_ERR_OR_NULL(ihandle))
 			ion_free(qseecom.ion_clnt, ihandle);
@@ -5612,10 +6234,16 @@ static int __qseecom_qteec_issue_cmd(struct qseecom_dev_handle *data,
 	uint32_t reqd_len_sb_in = 0;
 	void *cmd_buf = NULL;
 	size_t cmd_len;
+	struct sglist_info *table = data->sglistinfo_ptr;
+	void *req_ptr = NULL;
+	void *resp_ptr = NULL;
 
 	ret  = __qseecom_qteec_validate_msg(data, req);
 	if (ret)
 		return ret;
+
+	req_ptr = req->req_ptr;
+	resp_ptr = req->resp_ptr;
 
 	/* find app_id & img_name from list */
 	spin_lock_irqsave(&qseecom.registered_app_list_lock, flags);
@@ -5636,26 +6264,41 @@ static int __qseecom_qteec_issue_cmd(struct qseecom_dev_handle *data,
 		return -ENOENT;
 	}
 
+	req->req_ptr = (void *)__qseecom_uvirt_to_kvirt(data,
+						(uintptr_t)req->req_ptr);
+	req->resp_ptr = (void *)__qseecom_uvirt_to_kvirt(data,
+						(uintptr_t)req->resp_ptr);
+
+	if ((cmd_id == QSEOS_TEE_OPEN_SESSION) ||
+			(cmd_id == QSEOS_TEE_REQUEST_CANCELLATION)) {
+		ret = __qseecom_update_qteec_req_buf(
+			(struct qseecom_qteec_modfd_req *)req, data, false);
+		if (ret)
+			return ret;
+	}
+
 	if (qseecom.qsee_version < QSEE_VERSION_40) {
-		ireq.qsee_cmd_id = cmd_id;
 		ireq.app_id = data->client.app_id;
 		ireq.req_ptr = (uint32_t)__qseecom_uvirt_to_kphys(data,
-						(uintptr_t)req->req_ptr);
+						(uintptr_t)req_ptr);
 		ireq.req_len = req->req_len;
 		ireq.resp_ptr = (uint32_t)__qseecom_uvirt_to_kphys(data,
-						(uintptr_t)req->resp_ptr);
+						(uintptr_t)resp_ptr);
 		ireq.resp_len = req->resp_len;
+		ireq.sglistinfo_ptr = (uint32_t)virt_to_phys(table);
+		ireq.sglistinfo_len = SGLISTINFO_TABLE_SIZE;
+		dmac_flush_range((void *)table,
+				(void *)table + SGLISTINFO_TABLE_SIZE);
 		cmd_buf = (void *)&ireq;
 		cmd_len = sizeof(struct qseecom_qteec_ireq);
 #ifndef CONFIG_ARCH_MSM8974
 	} else {
-		ireq_64bit.qsee_cmd_id = cmd_id;
 		ireq_64bit.app_id = data->client.app_id;
 		ireq_64bit.req_ptr = (uint64_t)__qseecom_uvirt_to_kphys(data,
-						(uintptr_t)req->req_ptr);
+						(uintptr_t)req_ptr);
 		ireq_64bit.req_len = req->req_len;
 		ireq_64bit.resp_ptr = (uint64_t)__qseecom_uvirt_to_kphys(data,
-						(uintptr_t)req->resp_ptr);
+						(uintptr_t)resp_ptr);
 		ireq_64bit.resp_len = req->resp_len;
 		if ((data->client.app_arch == ELFCLASS32) &&
 			((ireq_64bit.req_ptr >=
@@ -5669,23 +6312,31 @@ static int __qseecom_qteec_issue_cmd(struct qseecom_dev_handle *data,
 				ireq_64bit.resp_ptr, ireq_64bit.resp_len);
 			return -EFAULT;
 		}
+		ireq_64bit.sglistinfo_ptr = (uint64_t)virt_to_phys(table);
+		ireq_64bit.sglistinfo_len = SGLISTINFO_TABLE_SIZE;
+		dmac_flush_range((void *)table,
+				(void *)table + SGLISTINFO_TABLE_SIZE);
 		cmd_buf = (void *)&ireq_64bit;
 		cmd_len = sizeof(struct qseecom_qteec_64bit_ireq);
 #endif
 	}
+	if (qseecom.whitelist_support == true
+		&& cmd_id == QSEOS_TEE_OPEN_SESSION)
+		*(uint32_t *)cmd_buf = QSEOS_TEE_OPEN_SESSION_WHITELIST;
+	else
+		*(uint32_t *)cmd_buf = cmd_id;
 
-	if ((cmd_id == QSEOS_TEE_OPEN_SESSION) ||
-			(cmd_id == QSEOS_TEE_REQUEST_CANCELLATION)) {
-		ret = __qseecom_update_qteec_req_buf(
-			(struct qseecom_qteec_modfd_req *)req, data, false);
-		if (ret)
-			return ret;
-	}
 	reqd_len_sb_in = req->req_len + req->resp_len;
-	msm_ion_do_cache_op(qseecom.ion_clnt, data->client.ihandle,
+	ret = msm_ion_do_cache_op(qseecom.ion_clnt, data->client.ihandle,
 					data->client.sb_virt,
 					reqd_len_sb_in,
 					ION_IOC_CLEAN_INV_CACHES);
+	if (ret) {
+		pr_err("cache operation failed %d\n", ret);
+		return ret;
+	}
+
+	__qseecom_reentrancy_check_if_this_app_blocked(ptr_app);
 
 	__qseecom_reentrancy_check_if_this_app_blocked(ptr_app);
 
@@ -5716,9 +6367,13 @@ static int __qseecom_qteec_issue_cmd(struct qseecom_dev_handle *data,
 			}
 		}
 	}
-	msm_ion_do_cache_op(qseecom.ion_clnt, data->client.ihandle,
+	ret = msm_ion_do_cache_op(qseecom.ion_clnt, data->client.ihandle,
 				data->client.sb_virt, data->client.sb_length,
 				ION_IOC_INV_CACHES);
+	if (ret) {
+		pr_err("cache operation failed %d\n", ret);
+		return ret;
+	}
 
 	if ((cmd_id == QSEOS_TEE_OPEN_SESSION) ||
 			(cmd_id == QSEOS_TEE_REQUEST_CANCELLATION)) {
@@ -5778,6 +6433,9 @@ static int qseecom_qteec_invoke_modfd_cmd(struct qseecom_dev_handle *data,
 	uint32_t reqd_len_sb_in = 0;
 	void *cmd_buf = NULL;
 	size_t cmd_len;
+	struct sglist_info *table = data->sglistinfo_ptr;
+	void *req_ptr = NULL;
+	void *resp_ptr = NULL;
 
 	ret = copy_from_user(&req, argp,
 			sizeof(struct qseecom_qteec_modfd_req));
@@ -5787,6 +6445,42 @@ static int qseecom_qteec_invoke_modfd_cmd(struct qseecom_dev_handle *data,
 	}
 	ret = __qseecom_qteec_validate_msg(data,
 					(struct qseecom_qteec_req *)(&req));
+	if (ret)
+		return ret;
+	req_ptr = req.req_ptr;
+	resp_ptr = req.resp_ptr;
+
+	/* find app_id & img_name from list */
+	spin_lock_irqsave(&qseecom.registered_app_list_lock, flags);
+	list_for_each_entry(ptr_app, &qseecom.registered_app_list_head,
+							list) {
+		if ((ptr_app->app_id == data->client.app_id) &&
+			 (!memcmp(ptr_app->app_name,
+				data->client.app_name,
+				strlen(ptr_app->app_name)))) {
+			found_app = true;
+			break;
+		}
+	}
+	spin_unlock_irqrestore(&qseecom.registered_app_list_lock, flags);
+	if (!found_app) {
+		pr_err("app_id %d (%s) is not found\n", data->client.app_id,
+			(char *)data->client.app_name);
+		return -ENOENT;
+	}
+
+	/* validate offsets */
+	for (i = 0; i < MAX_ION_FD; i++) {
+		if (req.ifd_data[i].fd) {
+			if (req.ifd_data[i].cmd_buf_offset >= req.req_len)
+				return -EINVAL;
+		}
+	}
+	req.req_ptr = (void *)__qseecom_uvirt_to_kvirt(data,
+						(uintptr_t)req.req_ptr);
+	req.resp_ptr = (void *)__qseecom_uvirt_to_kvirt(data,
+						(uintptr_t)req.resp_ptr);
+	ret = __qseecom_update_qteec_req_buf(&req, data, false);
 	if (ret)
 		return ret;
 
@@ -5810,48 +6504,50 @@ static int qseecom_qteec_invoke_modfd_cmd(struct qseecom_dev_handle *data,
 	}
 
 	if (qseecom.qsee_version < QSEE_VERSION_40) {
-		ireq.qsee_cmd_id = QSEOS_TEE_INVOKE_COMMAND;
 		ireq.app_id = data->client.app_id;
 		ireq.req_ptr = (uint32_t)__qseecom_uvirt_to_kphys(data,
-						(uintptr_t)req.req_ptr);
+						(uintptr_t)req_ptr);
 		ireq.req_len = req.req_len;
 		ireq.resp_ptr = (uint32_t)__qseecom_uvirt_to_kphys(data,
-						(uintptr_t)req.resp_ptr);
+						(uintptr_t)resp_ptr);
 		ireq.resp_len = req.resp_len;
 		cmd_buf = (void *)&ireq;
 		cmd_len = sizeof(struct qseecom_qteec_ireq);
+		ireq.sglistinfo_ptr = (uint32_t)virt_to_phys(table);
+		ireq.sglistinfo_len = SGLISTINFO_TABLE_SIZE;
+		dmac_flush_range((void *)table,
+				(void *)table + SGLISTINFO_TABLE_SIZE);
 	} else {
-		ireq_64bit.qsee_cmd_id = QSEOS_TEE_INVOKE_COMMAND;
 		ireq_64bit.app_id = data->client.app_id;
 		ireq_64bit.req_ptr = (uint64_t)__qseecom_uvirt_to_kphys(data,
-						(uintptr_t)req.req_ptr);
+						(uintptr_t)req_ptr);
 		ireq_64bit.req_len = req.req_len;
 		ireq_64bit.resp_ptr = (uint64_t)__qseecom_uvirt_to_kphys(data,
-						(uintptr_t)req.resp_ptr);
+						(uintptr_t)resp_ptr);
 		ireq_64bit.resp_len = req.resp_len;
 		cmd_buf = (void *)&ireq_64bit;
 		cmd_len = sizeof(struct qseecom_qteec_64bit_ireq);
+		ireq_64bit.sglistinfo_ptr = (uint64_t)virt_to_phys(table);
+		ireq_64bit.sglistinfo_len = SGLISTINFO_TABLE_SIZE;
+		dmac_flush_range((void *)table,
+				(void *)table + SGLISTINFO_TABLE_SIZE);
 	}
 	reqd_len_sb_in = req.req_len + req.resp_len;
+	if (qseecom.whitelist_support == true)
+		*(uint32_t *)cmd_buf = QSEOS_TEE_INVOKE_COMMAND_WHITELIST;
+	else
+		*(uint32_t *)cmd_buf = QSEOS_TEE_INVOKE_COMMAND;
 
-	/* validate offsets */
-	for (i = 0; i < MAX_ION_FD; i++) {
-		if (req.ifd_data[i].fd) {
-			if (req.ifd_data[i].cmd_buf_offset >= req.req_len)
-				return -EINVAL;
-		}
-	}
-	req.req_ptr = (void *)__qseecom_uvirt_to_kvirt(data,
-						(uintptr_t)req.req_ptr);
-	req.resp_ptr = (void *)__qseecom_uvirt_to_kvirt(data,
-						(uintptr_t)req.resp_ptr);
-	ret = __qseecom_update_qteec_req_buf(&req, data, false);
-	if (ret)
-		return ret;
 	msm_ion_do_cache_op(qseecom.ion_clnt, data->client.ihandle,
 					data->client.sb_virt,
 					reqd_len_sb_in,
 					ION_IOC_CLEAN_INV_CACHES);
+	if (ret) {
+		pr_err("cache operation failed %d\n", ret);
+		return ret;
+	}
+
+	__qseecom_reentrancy_check_if_this_app_blocked(ptr_app);
 
 	__qseecom_reentrancy_check_if_this_app_blocked(ptr_app);
 
@@ -5886,9 +6582,13 @@ static int qseecom_qteec_invoke_modfd_cmd(struct qseecom_dev_handle *data,
 	if (ret)
 		return ret;
 
-	msm_ion_do_cache_op(qseecom.ion_clnt, data->client.ihandle,
+	ret = msm_ion_do_cache_op(qseecom.ion_clnt, data->client.ihandle,
 				data->client.sb_virt, data->client.sb_length,
 				ION_IOC_INV_CACHES);
+	if (ret) {
+		pr_err("cache operation failed %d\n", ret);
+		return ret;
+	}
 	return 0;
 }
 
@@ -5908,6 +6608,15 @@ static int qseecom_qteec_request_cancellation(struct qseecom_dev_handle *data,
 						QSEOS_TEE_REQUEST_CANCELLATION);
 
 	return ret;
+}
+
+static void __qseecom_clean_data_sglistinfo(struct qseecom_dev_handle *data)
+{
+	if (data->sglist_cnt) {
+		memset(data->sglistinfo_ptr, 0,
+			SGLISTINFO_TABLE_SIZE);
+		data->sglist_cnt = 0;
+	}
 }
 
 long qseecom_ioctl(struct file *file, unsigned cmd, unsigned long arg)
@@ -6089,6 +6798,7 @@ long qseecom_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 		mutex_unlock(&app_access_lock);
 		if (ret)
 			pr_err("failed qseecom_send_cmd: %d\n", ret);
+		__qseecom_clean_data_sglistinfo(data);
 		break;
 	}
 	case QSEECOM_IOCTL_RECEIVE_REQ: {
@@ -6186,6 +6896,14 @@ long qseecom_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 	case QSEECOM_IOCTL_GET_QSEOS_VERSION_REQ: {
 		atomic_inc(&data->ioctl_count);
 		ret = qseecom_get_qseos_version(data, argp);
+		if (ret)
+			pr_err("qseecom_get_qseos_version: %d\n", ret);
+		atomic_dec(&data->ioctl_count);
+		break;
+	}
+	case QSEECOM_IOCTL_GET_QSEE_VERSION_REQ: {
+		atomic_inc(&data->ioctl_count);
+		ret = qseecom_get_qsee_version(data, argp);
 		if (ret)
 			pr_err("qseecom_get_qseos_version: %d\n", ret);
 		atomic_dec(&data->ioctl_count);
@@ -6301,6 +7019,13 @@ long qseecom_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 		break;
 	}
 	case QSEECOM_IOCTL_APP_LOADED_QUERY_REQ: {
+		if ((data->type != QSEECOM_GENERIC) &&
+			(data->type != QSEECOM_CLIENT_APP)) {
+			pr_err("app loaded query req: invalid handle (%d)\n",
+								data->type);
+			ret = -EINVAL;
+			break;
+		}
 		data->type = QSEECOM_CLIENT_APP;
 		mutex_lock(&app_access_lock);
 		atomic_inc(&data->ioctl_count);
@@ -6466,6 +7191,7 @@ long qseecom_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 		wake_up_all(&data->abort_wq);
 		if (ret)
 			pr_err("failed qseecom_send_mod_resp: %d\n", ret);
+		__qseecom_clean_data_sglistinfo(data);
 		break;
 	}
 	case QSEECOM_QTEEC_IOCTL_OPEN_SESSION_REQ: {
@@ -6490,6 +7216,7 @@ long qseecom_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 		mutex_unlock(&app_access_lock);
 		if (ret)
 			pr_err("failed open_session_cmd: %d\n", ret);
+		__qseecom_clean_data_sglistinfo(data);
 		break;
 	}
 	case QSEECOM_QTEEC_IOCTL_CLOSE_SESSION_REQ: {
@@ -6538,6 +7265,7 @@ long qseecom_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 		mutex_unlock(&app_access_lock);
 		if (ret)
 			pr_err("failed Invoke cmd: %d\n", ret);
+		__qseecom_clean_data_sglistinfo(data);
 		break;
 	}
 	case QSEECOM_QTEEC_IOCTL_REQUEST_CANCELLATION_REQ: {
@@ -6589,7 +7317,6 @@ static int qseecom_open(struct inode *inode, struct file *file)
 	data->mode = INACTIVE;
 	init_waitqueue_head(&data->abort_wq);
 	atomic_set(&data->ioctl_count, 0);
-
 	return ret;
 }
 
@@ -6784,10 +7511,20 @@ static void __qseecom_deinit_clk(enum qseecom_ce_hw_instance ce)
 	qclk->instance = CLK_INVALID;
 }
 
+/*
+ * Check whitelist feature, and if TZ feature version is < 1.0.0,
+ * then whitelist feature is not supported.
+ */
+static int qseecom_check_whitelist_feature(void)
+{
+	int version = scm_get_feat_version(FEATURE_ID_WHITELIST);
+
+	return version >= MAKE_WHITELIST_VERSION(1, 0, 0);
+}
+
 static int qseecom_probe(struct platform_device *pdev)
 {
 	int rc;
-	int ret = 0;
 	uint32_t feature = 10;
 	struct device *class_dev;
 	struct msm_bus_scale_pdata *qseecom_platform_support = NULL;
@@ -6815,6 +7552,7 @@ static int qseecom_probe(struct platform_device *pdev)
 
 	qseecom.app_block_ref_cnt = 0;
 	init_waitqueue_head(&qseecom.app_block_wq);
+	qseecom.whitelist_support = true;
 
 	rc = alloc_chrdev_region(&qseecom_device_no, 0, 1, QSEECOM_DEV);
 	if (rc < 0) {
@@ -6831,7 +7569,7 @@ static int qseecom_probe(struct platform_device *pdev)
 
 	class_dev = device_create(driver_class, NULL, qseecom_device_no, NULL,
 			QSEECOM_DEV);
-	if (!class_dev) {
+	if (IS_ERR(class_dev)) {
 		pr_err("class_device_create failed %d\n", rc);
 		rc = -ENOMEM;
 		goto exit_destroy_class;
@@ -6870,7 +7608,7 @@ static int qseecom_probe(struct platform_device *pdev)
 	qseecom.pdev = class_dev;
 	/* Create ION msm client */
 	qseecom.ion_clnt = msm_ion_client_create("qseecom-kernel");
-	if (qseecom.ion_clnt == NULL) {
+	if (IS_ERR_OR_NULL(qseecom.ion_clnt)) {
 		pr_err("Ion client cannot be created\n");
 		rc = -ENOMEM;
 		goto exit_del_cdev;
@@ -7019,14 +7757,14 @@ static int qseecom_probe(struct platform_device *pdev)
 			pr_info("CE operating frequency is not defined, setting to default 100MHZ\n");
 			qseecom.ce_opp_freq_hz = QSEE_CE_CLK_100MHZ;
 		}
-		ret = __qseecom_init_clk(CLK_QSEE);
-		if (ret)
+		rc = __qseecom_init_clk(CLK_QSEE);
+		if (rc)
 			goto exit_destroy_hw_instance_list;
 
 		if ((qseecom.qsee.instance != qseecom.ce_drv.instance) &&
 				(qseecom.support_pfe || qseecom.support_fde)) {
-			ret = __qseecom_init_clk(CLK_CE_DRV);
-			if (ret) {
+			rc = __qseecom_init_clk(CLK_CE_DRV);
+			if (rc) {
 				__qseecom_deinit_clk(CLK_QSEE);
 				goto exit_destroy_hw_instance_list;
 			}
@@ -7043,7 +7781,8 @@ static int qseecom_probe(struct platform_device *pdev)
 		qseecom_platform_support = (struct msm_bus_scale_pdata *)
 						msm_bus_cl_get_pdata(pdev);
 		if (qseecom.qsee_version >= (QSEE_VERSION_02) &&
-			!qseecom.appsbl_qseecom_support) {
+			(!qseecom.is_apps_region_protected &&
+			!qseecom.appsbl_qseecom_support)) {
 			struct resource *resource = NULL;
 			struct qsee_apps_region_info_ireq req;
 			struct qsee_apps_region_info_64bit_ireq req_64bit;
@@ -7077,7 +7816,7 @@ static int qseecom_probe(struct platform_device *pdev)
 			} else {
 				pr_err("Fail to get secure app region info\n");
 				rc = -EINVAL;
-				goto exit_destroy_hw_instance_list;
+				goto exit_deinit_clock;
 			}
 			rc = qseecom_scm_call(SCM_SVC_TZSCHEDULER, 1,
 					cmd_buf, cmd_len,
@@ -7086,12 +7825,17 @@ static int qseecom_probe(struct platform_device *pdev)
 				pr_err("send secapp reg fail %d resp.res %d\n",
 							rc, resp.result);
 				rc = -EINVAL;
-				goto exit_destroy_hw_instance_list;
+				goto exit_deinit_clock;
 			}
 		}
-		if (qseecom.appsbl_qseecom_support) {
+	/*
+	 * By default, appsbl only loads cmnlib. If OEM changes appsbl to
+	 * load cmnlib64 too, while cmnlib64 img is not present in non_hlos.bin,
+	 * Pls add "qseecom.commonlib64_loaded = true" here too.
+	 */
+		if (qseecom.is_apps_region_protected ||
+				qseecom.appsbl_qseecom_support)
 			qseecom.commonlib_loaded = true;
-		}
 	} else {
 		qseecom_platform_support = (struct msm_bus_scale_pdata *)
 						pdev->dev.platform_data;
@@ -7107,10 +7851,19 @@ static int qseecom_probe(struct platform_device *pdev)
 	qseecom.qsee_perf_client = msm_bus_scale_register_client(
 					qseecom_platform_support);
 
+	qseecom.whitelist_support = qseecom_check_whitelist_feature();
+	pr_warn("qseecom.whitelist_support = %d\n",
+				qseecom.whitelist_support);
+
 	if (!qseecom.qsee_perf_client)
 		pr_err("Unable to register bus client\n");
 	return 0;
 
+exit_deinit_clock:
+	__qseecom_deinit_clk(CLK_QSEE);
+	if ((qseecom.qsee.instance != qseecom.ce_drv.instance) &&
+		(qseecom.support_pfe || qseecom.support_fde))
+		__qseecom_deinit_clk(CLK_CE_DRV);
 exit_destroy_hw_instance_list:
 	kzfree(qseecom.ce_info.hlos_ce_hw_instance);
 exit_destroy_ion_client:

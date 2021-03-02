@@ -527,9 +527,23 @@ static ssize_t sockfs_listxattr(struct dentry *dentry, char *buffer,
 	return used;
 }
 
+static int sockfs_setattr(struct dentry *dentry, struct iattr *iattr)
+{
+	int err = simple_setattr(dentry, iattr);
+
+	if (!err && (iattr->ia_valid & ATTR_UID)) {
+		struct socket *sock = SOCKET_I(dentry->d_inode);
+
+		sock->sk->sk_uid = iattr->ia_uid;
+	}
+
+	return err;
+}
+
 static const struct inode_operations sockfs_inode_ops = {
 	.getxattr = sockfs_getxattr,
 	.listxattr = sockfs_listxattr,
+	.setattr = sockfs_setattr,
 };
 
 /**
@@ -2428,23 +2442,24 @@ int __sys_recvmmsg(int fd, struct mmsghdr __user *mmsg, unsigned int vlen,
 		goto out_put;
 	}
 
-	/*
-	 * We may return less entries than requested (vlen) if the
-	 * sock is non block and there aren't enough datagrams...
-	 */
-	if (err != -EAGAIN) {
 		/*
-		 * ... or  if recvmsg returns an error after we
-		 * received some datagrams, where we record the
-		 * error to return on the next call or if the
-		 * app asks about it using getsockopt(SO_ERROR).
+		 * We may return less entries than requested (vlen) if the
+		 * sock is non block and there aren't enough datagrams...
 		 */
-		sock->sk->sk_err = -err;
-	}
-out_put:
-	fput_light(sock->file, fput_needed);
+		if (err != -EAGAIN) {
+			/*
+			 * ... or  if recvmsg returns an error after we
+			 * received some datagrams, where we record the
+			 * error to return on the next call or if the
+			 * app asks about it using getsockopt(SO_ERROR).
+			 */
+			sock->sk->sk_err = -err;
+		}
 
-	return datagrams;
+out_put:
+		fput_light(sock->file, fput_needed);
+
+		return datagrams;
 }
 
 SYSCALL_DEFINE5(recvmmsg, int, fd, struct mmsghdr __user *, mmsg,

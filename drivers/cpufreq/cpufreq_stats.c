@@ -127,7 +127,8 @@ static int get_index_all_cpufreq_stat(struct all_cpufreq_stats *all_stat,
 	return -1;
 }
 
-void acct_update_power(struct task_struct *task, cputime_t cputime) {
+void acct_update_power(struct task_struct *task, cputime_t cputime)
+{
 	struct cpufreq_power_stats *powerstats;
 	struct cpufreq_stats *stats;
 	unsigned int cpu_num, curr;
@@ -330,6 +331,7 @@ static void cpufreq_allstats_free(void)
 		kfree(all_stat);
 		per_cpu(all_cpufreq_stats, cpu) = NULL;
 	}
+
 	if (all_freq_table) {
 		kfree(all_freq_table->freq_table);
 		kfree(all_freq_table);
@@ -363,8 +365,7 @@ static int __cpufreq_stats_create_table(struct cpufreq_policy *policy,
 	unsigned int cpu = policy->cpu;
 
 	if (per_cpu(cpufreq_stats_table, cpu))
-		return 0;
-
+		return -EBUSY;
 	stat = kzalloc(sizeof(*stat), GFP_KERNEL);
 	if ((stat) == NULL) {
 		pr_err("Failed to alloc cpufreq_stats table\n");
@@ -589,7 +590,7 @@ static int cpufreq_stat_notifier_policy(struct notifier_block *nb,
 	int ret, count = 0, i;
 	struct cpufreq_policy *policy = data;
 	struct cpufreq_frequency_table *table;
-	unsigned int cpu_num, cpu = policy->cpu;
+	unsigned int cpu = policy->cpu;
 
 	if (val == CPUFREQ_UPDATE_POLICY_CPU) {
 		cpufreq_stats_update_policy_cpu(policy);
@@ -611,10 +612,8 @@ static int cpufreq_stat_notifier_policy(struct notifier_block *nb,
 	if (!per_cpu(all_cpufreq_stats, cpu))
 		cpufreq_allstats_create(cpu, table, count);
 
-	for_each_possible_cpu(cpu_num) {
-		if (!per_cpu(cpufreq_power_stats, cpu_num))
-			cpufreq_powerstats_create(cpu_num, table, count);
-	}
+	if (!per_cpu(cpufreq_power_stats, cpu))
+		cpufreq_powerstats_create(cpu, table, count);
 
 	if (val == CPUFREQ_CREATE_POLICY)
 		ret = __cpufreq_stats_create_table(policy, table, count);

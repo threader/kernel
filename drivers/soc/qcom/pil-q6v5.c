@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2015,2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -180,14 +180,32 @@ void pil_q6v5_halt_axi_port(struct pil_desc *pil, void __iomem *halt_base)
 	ret = readl_poll_timeout(halt_base + AXI_HALTACK,
 		status, status != 0, 50, HALT_ACK_TIMEOUT_US);
 	if (ret)
-		dev_warn(pil->dev, "Port %p halt timeout\n", halt_base);
+		dev_warn(pil->dev, "Port %pK halt timeout\n", halt_base);
 	else if (!readl_relaxed(halt_base + AXI_IDLE))
-		dev_warn(pil->dev, "Port %p halt failed\n", halt_base);
+		dev_warn(pil->dev, "Port %pK halt failed\n", halt_base);
 
 	/* Clear halt request (port will remain halted until reset) */
 	writel_relaxed(0, halt_base + AXI_HALTREQ);
 }
 EXPORT_SYMBOL(pil_q6v5_halt_axi_port);
+
+void assert_clamps(struct pil_desc *pil)
+{
+	u32 val;
+	struct q6v5_data *drv = container_of(pil, struct q6v5_data, desc);
+
+	/*
+	 * Assert QDSP6 I/O clamp, memory wordline clamp, and compiler memory
+	 * clamp as a software workaround to avoid high MX current during
+	 * LPASS/MSS restart.
+	 */
+	val = readl_relaxed(drv->reg_base + QDSP6SS_PWR_CTL);
+	val |= (Q6SS_CLAMP_IO | QDSP6v55_CLAMP_WL |
+			QDSP6v55_CLAMP_QMC_MEM);
+	writel_relaxed(val, drv->reg_base + QDSP6SS_PWR_CTL);
+	/* To make sure asserting clamps is done before MSS restart*/
+	mb();
+}
 
 static void __pil_q6v5_shutdown(struct pil_desc *pil)
 {
@@ -448,6 +466,7 @@ struct q6v5_data *pil_q6v5_init(struct platform_device *pdev)
 	if (ret)
 		return ERR_PTR(ret);
 
+	desc->clear_fw_region = false;
 	desc->dev = &pdev->dev;
 
 	drv->qdsp6v5_2_0 = of_device_is_compatible(pdev->dev.of_node,
@@ -529,6 +548,8 @@ struct q6v5_data *pil_q6v5_init(struct platform_device *pdev)
 
 	drv->ahb_clk_vote = of_property_read_bool(pdev->dev.of_node,
 						"qcom,ahb-clk-vote");
+	drv->mx_spike_wa = of_property_read_bool(pdev->dev.of_node,
+						"qcom,mx-spike-wa");
 
 	drv->xo = devm_clk_get(&pdev->dev, "xo");
 	if (IS_ERR(drv->xo))

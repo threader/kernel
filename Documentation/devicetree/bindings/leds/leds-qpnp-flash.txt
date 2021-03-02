@@ -97,7 +97,8 @@ Optional properties inside child node:
 		LED used as flash.
 - reg<n>	: reg<n> (<n> represents number. eg 0,1,2,..) property is to add support for
 		multiple power sources. It includes two properties regulator-name and max-voltage.
-		- regulator-name	: This denotes this node is regulator node and which
+		Required property inside regulator node:
+		- regulator-name	: This denotes this node is a regulator node and which
 					regulator to use.
 		Optional property inside regulator node:
 		- max-voltage		: This specifies max voltage of regulator. Some switch

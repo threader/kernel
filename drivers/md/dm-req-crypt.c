@@ -883,6 +883,7 @@ static int req_crypt_endio(struct dm_target *ti, struct request *clone,
 	bvec = NULL;
 	if (encryption_mode == DM_REQ_CRYPT_ENCRYPTION_MODE_TRANSPARENT) {
 		mempool_free(req_io, req_io_pool);
+		err = error;
 		goto submit_request;
 	}
 
@@ -1319,12 +1320,6 @@ static int req_crypt_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	 */
 	ti->num_flush_bios = 1;
 	ti->num_discard_bios = 1;
-
-	/*
-	 * If underlying device supports flush, mapped target should
-	 * also allow it
-	 */
-	ti->num_flush_bios = 1;
 
 	err = 0;
 

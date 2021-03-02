@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -225,6 +225,7 @@ void chk_logging_wakeup(void)
 		 */
 		if ((driver->data_ready[i] & USER_SPACE_DATA_TYPE) == 0) {
 			driver->data_ready[i] |= USER_SPACE_DATA_TYPE;
+			atomic_inc(&driver->data_ready_notif[i]);
 			pr_debug("diag: Force wakeup of logging process\n");
 			wake_up_interruptible(&driver->wait_q);
 		}
@@ -428,8 +429,11 @@ void diag_update_userspace_clients(unsigned int type)
 
 	mutex_lock(&driver->diagchar_mutex);
 	for (i = 0; i < driver->num_clients; i++)
-		if (driver->client_map[i].pid != 0)
+		if (driver->client_map[i].pid != 0 &&
+			!(driver->data_ready[i] & type)) {
 			driver->data_ready[i] |= type;
+			atomic_inc(&driver->data_ready_notif[i]);
+		}
 	wake_up_interruptible(&driver->wait_q);
 	mutex_unlock(&driver->diagchar_mutex);
 }
@@ -441,7 +445,10 @@ void diag_update_sleeping_process(int process_id, int data_type)
 	mutex_lock(&driver->diagchar_mutex);
 	for (i = 0; i < driver->num_clients; i++)
 		if (driver->client_map[i].pid == process_id) {
-			driver->data_ready[i] |= data_type;
+			if (!(driver->data_ready[i] & data_type)) {
+				driver->data_ready[i] |= data_type;
+				atomic_inc(&driver->data_ready_notif[i]);
+			}
 			break;
 		}
 	wake_up_interruptible(&driver->wait_q);
@@ -575,7 +582,8 @@ int diag_process_time_sync_query_cmd(unsigned char *src_buf, int src_len,
 	struct diag_cmd_time_sync_query_req_t *req = NULL;
 	struct diag_cmd_time_sync_query_rsp_t rsp;
 
-	if (!src_buf || !dest_buf || src_len <= 0 || dest_len <= 0) {
+	if (!src_buf || !dest_buf || src_len <= 0 || dest_len <= 0 ||
+		src_len < sizeof(struct diag_cmd_time_sync_query_req_t)) {
 		pr_err("diag: Invalid input in %s, src_buf: %pK, src_len: %d, dest_buf: %pK, dest_len: %d",
 			__func__, src_buf, src_len, dest_buf, dest_len);
 		return -EINVAL;
@@ -602,7 +610,8 @@ int diag_process_time_sync_switch_cmd(unsigned char *src_buf, int src_len,
 	int msg_size = sizeof(struct diag_ctrl_msg_time_sync);
 	int err = 0, write_len = 0;
 
-	if (!src_buf || !dest_buf || src_len <= 0 || dest_len <= 0) {
+	if (!src_buf || !dest_buf || src_len <= 0 || dest_len <= 0 ||
+		src_len < sizeof(struct diag_cmd_time_sync_switch_req_t)) {
 		pr_err("diag: Invalid input in %s, src_buf: %pK, src_len: %d, dest_buf: %pK, dest_len: %d",
 			__func__, src_buf, src_len, dest_buf, dest_len);
 		return -EINVAL;
@@ -1270,7 +1279,9 @@ static void diag_hdlc_start_recovery(unsigned char *buf, int len)
 
 	if (start_ptr) {
 		/* Discard any partial packet reads */
+		mutex_lock(&driver->hdlc_recovery_mutex);
 		driver->incoming_pkt.processing = 0;
+		mutex_unlock(&driver->hdlc_recovery_mutex);
 		diag_process_non_hdlc_pkt(start_ptr, len - i);
 	}
 }
@@ -1283,18 +1294,24 @@ void diag_process_non_hdlc_pkt(unsigned char *buf, int len)
 	const uint32_t header_len = sizeof(struct diag_pkt_frame_t);
 	struct diag_pkt_frame_t *actual_pkt = NULL;
 	unsigned char *data_ptr = NULL;
-	struct diag_partial_pkt_t *partial_pkt = &driver->incoming_pkt;
+	struct diag_partial_pkt_t *partial_pkt = NULL;
 
-	if (!buf || len <= 0)
+	mutex_lock(&driver->hdlc_recovery_mutex);
+	if (!buf || len <= 0) {
+		mutex_unlock(&driver->hdlc_recovery_mutex);
 		return;
-
-	if (!partial_pkt->processing)
+	}
+	partial_pkt = &driver->incoming_pkt;
+	if (!partial_pkt->processing) {
+		mutex_unlock(&driver->hdlc_recovery_mutex);
 		goto start;
+	}
 
 	if (partial_pkt->remaining > len) {
 		if ((partial_pkt->read_len + len) > partial_pkt->capacity) {
 			pr_err("diag: Invalid length %d, %d received in %s\n",
 			       partial_pkt->read_len, len, __func__);
+			mutex_unlock(&driver->hdlc_recovery_mutex);
 			goto end;
 		}
 		memcpy(partial_pkt->data + partial_pkt->read_len, buf, len);
@@ -1308,6 +1325,7 @@ void diag_process_non_hdlc_pkt(unsigned char *buf, int len)
 			pr_err("diag: Invalid length during partial read %d, %d received in %s\n",
 			       partial_pkt->read_len,
 			       partial_pkt->remaining, __func__);
+			mutex_unlock(&driver->hdlc_recovery_mutex);
 			goto end;
 		}
 		memcpy(partial_pkt->data + partial_pkt->read_len, buf,
@@ -1321,20 +1339,27 @@ void diag_process_non_hdlc_pkt(unsigned char *buf, int len)
 	if (partial_pkt->remaining == 0) {
 		actual_pkt = (struct diag_pkt_frame_t *)(partial_pkt->data);
 		data_ptr = partial_pkt->data + header_len;
-		if (*(uint8_t *)(data_ptr + actual_pkt->length) != CONTROL_CHAR)
+		if (*(uint8_t *)(data_ptr + actual_pkt->length) !=
+						CONTROL_CHAR) {
+			mutex_unlock(&driver->hdlc_recovery_mutex);
 			diag_hdlc_start_recovery(buf, len);
+			mutex_lock(&driver->hdlc_recovery_mutex);
+		}
 		err = diag_process_apps_pkt(data_ptr,
 					    actual_pkt->length);
 		if (err) {
 			pr_err("diag: In %s, unable to process incoming data packet, err: %d\n",
 			       __func__, err);
+			mutex_unlock(&driver->hdlc_recovery_mutex);
 			goto end;
 		}
 		partial_pkt->read_len = 0;
 		partial_pkt->total_len = 0;
 		partial_pkt->processing = 0;
+		mutex_unlock(&driver->hdlc_recovery_mutex);
 		goto start;
 	}
+	mutex_unlock(&driver->hdlc_recovery_mutex);
 	goto end;
 
 start:
@@ -1347,14 +1372,14 @@ start:
 			diag_send_error_rsp(buf, len);
 			goto end;
 		}
-
+		mutex_lock(&driver->hdlc_recovery_mutex);
 		if (pkt_len + header_len > partial_pkt->capacity) {
 			pr_err("diag: In %s, incoming data is too large for the request buffer %d\n",
 			       __func__, pkt_len);
+			mutex_unlock(&driver->hdlc_recovery_mutex);
 			diag_hdlc_start_recovery(buf, len);
 			break;
 		}
-
 		if ((pkt_len + header_len) > (len - read_bytes)) {
 			partial_pkt->read_len = len - read_bytes;
 			partial_pkt->total_len = pkt_len + header_len;
@@ -1362,19 +1387,27 @@ start:
 						 partial_pkt->read_len;
 			partial_pkt->processing = 1;
 			memcpy(partial_pkt->data, buf, partial_pkt->read_len);
+			mutex_unlock(&driver->hdlc_recovery_mutex);
 			break;
 		}
 		data_ptr = buf + header_len;
-		if (*(uint8_t *)(data_ptr + actual_pkt->length) != CONTROL_CHAR)
+		if (*(uint8_t *)(data_ptr + actual_pkt->length) !=
+						CONTROL_CHAR) {
+			mutex_unlock(&driver->hdlc_recovery_mutex);
 			diag_hdlc_start_recovery(buf, len);
+			mutex_lock(&driver->hdlc_recovery_mutex);
+		}
 		else
 			hdlc_reset = 0;
 		err = diag_process_apps_pkt(data_ptr,
 					    actual_pkt->length);
-		if (err)
+		if (err) {
+			mutex_unlock(&driver->hdlc_recovery_mutex);
 			break;
+		}
 		read_bytes += header_len + pkt_len + 1;
 		buf += header_len + pkt_len + 1; /* advance to next pkt */
+		mutex_unlock(&driver->hdlc_recovery_mutex);
 	}
 end:
 	return;
@@ -1530,6 +1563,8 @@ int diagfwd_init(void)
 							, GFP_KERNEL)) == NULL)
 		goto err;
 	kmemleak_not_leak(driver->data_ready);
+	for (i = 0; i < THRESHOLD_CLIENT_LIMIT; i++)
+		atomic_set(&driver->data_ready_notif[i], 0);
 	if (driver->apps_req_buf == NULL) {
 		driver->apps_req_buf = kzalloc(DIAG_MAX_REQ_SIZE, GFP_KERNEL);
 		if (!driver->apps_req_buf)

@@ -1697,6 +1697,20 @@ static int sdhci_disable(struct mmc_host *mmc)
 	return 0;
 }
 
+static void sdhci_notify_halt(struct mmc_host *mmc, bool halt)
+{
+	struct sdhci_host *host = mmc_priv(mmc);
+
+	pr_debug("%s: halt notification was sent, halt=%d\n",
+		mmc_hostname(mmc), halt);
+	if (host->flags & SDHCI_USE_ADMA_64BIT) {
+		if (halt)
+			host->adma_desc_line_sz = 16;
+		else
+			host->adma_desc_line_sz = 12;
+	}
+}
+
 static inline void sdhci_update_power_policy(struct sdhci_host *host,
 		enum sdhci_power_policy policy)
 {
@@ -2909,6 +2923,7 @@ static const struct mmc_host_ops sdhci_ops = {
 	.stop_request = sdhci_stop_request,
 	.get_xfer_remain = sdhci_get_xfer_remain,
 	.notify_load	= sdhci_notify_load,
+	.notify_halt	= sdhci_notify_halt,
 	.notify_pm_status	= sdhci_notify_pm_status,
 };
 
@@ -3147,12 +3162,12 @@ static void sdhci_show_adma_error(struct sdhci_host *host)
 
 		if (host->flags & SDHCI_USE_ADMA_64BIT) {
 			__le64 *dma = (__le64 *)(desc + 4);
-			pr_info("%s: %p: DMA %llx, LEN 0x%04x, Attr=0x%02x\n",
+			pr_info("%s: %pK: DMA %llx, LEN 0x%04x, Attr=0x%02x\n",
 			    name, desc, (long long)le64_to_cpu(*dma),
 			    le16_to_cpu(*len), attr);
 		} else {
 			__le32 *dma = (__le32 *)(desc + 4);
-			pr_info("%s: %p: DMA 0x%08x, LEN 0x%04x, Attr=0x%02x\n",
+			pr_info("%s: %pK: DMA 0x%08x, LEN 0x%04x, Attr=0x%02x\n",
 			    name, desc, le32_to_cpu(*dma), le16_to_cpu(*len),
 			    attr);
 		}
@@ -3778,8 +3793,11 @@ static void sdhci_cmdq_set_transfer_params(struct mmc_host *mmc)
 			ctrl |= SDHCI_CTRL_ADMA32;
 		sdhci_writeb(host, ctrl, SDHCI_HOST_CONTROL);
 	}
+<<<<<<< HEAD
 	if (host->ops->toggle_cdr)
 		host->ops->toggle_cdr(host, false);
+=======
+>>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 }
 
 static void sdhci_cmdq_clear_set_irqs(struct mmc_host *mmc, bool clear)

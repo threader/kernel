@@ -1,5 +1,9 @@
+<<<<<<< HEAD
 /* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Sony Mobile Communications Inc.
+=======
+/* Copyright (c) 2012-2015, 2017 The Linux Foundation. All rights reserved.
+>>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -35,7 +39,6 @@
 #include <sound/pcm_params.h>
 #include <sound/q6core.h>
 #include <sound/audio_cal_utils.h>
-#include <sound/msm-dts-eagle.h>
 #include <sound/audio_effects.h>
 #include <sound/hwdep.h>
 
@@ -107,6 +110,20 @@ static struct msm_pcm_route_bdai_pp_params
 
 static int msm_routing_send_device_pp_params(int port_id,  int copp_idx);
 
+static int msm_routing_get_bit_width(unsigned int format) {
+	int bit_width;
+	switch (format) {
+	case SNDRV_PCM_FORMAT_S24_LE:
+	case SNDRV_PCM_FORMAT_S24_3LE:
+		bit_width = 24;
+		break;
+	case SNDRV_PCM_FORMAT_S16_LE:
+	default:
+		bit_width = 16;
+	}
+	return bit_width;
+}
+
 static void msm_pcm_routing_cfg_pp(int port_id, int copp_idx, int topology,
 				   int channels)
 {
@@ -143,10 +160,6 @@ static void msm_pcm_routing_cfg_pp(int port_id, int copp_idx, int topology,
 					__func__, topology, port_id, rc);
 		}
 		break;
-	case ADM_CMD_COPP_OPEN_TOPOLOGY_ID_DTS_HPX:
-		pr_debug("%s: DTS_EAGLE_COPP_TOPOLOGY_ID\n", __func__);
-		msm_dts_eagle_init_post(port_id, copp_idx);
-		break;
 	case ADM_CMD_COPP_OPEN_TOPOLOGY_ID_AUDIOSPHERE:
 		pr_debug("%s: TOPOLOGY_ID_AUDIOSPHERE\n", __func__);
 		msm_qti_pp_asphere_init(port_id, copp_idx);
@@ -177,10 +190,6 @@ static void msm_pcm_routing_deinit_pp(int port_id, int topology)
 			pr_debug("%s: DOLBY_ADM_COPP_TOPOLOGY_ID\n", __func__);
 			msm_dolby_dap_deinit(port_id);
 		}
-		break;
-	case ADM_CMD_COPP_OPEN_TOPOLOGY_ID_DTS_HPX:
-		pr_debug("%s: DTS_EAGLE_COPP_TOPOLOGY_ID\n", __func__);
-		msm_dts_eagle_deinit_post(port_id, topology);
 		break;
 	case ADM_CMD_COPP_OPEN_TOPOLOGY_ID_AUDIOSPHERE:
 		pr_debug("%s: TOPOLOGY_ID_AUDIOSPHERE\n", __func__);
@@ -283,7 +292,6 @@ struct msm_pcm_routing_bdai_data msm_bedais[MSM_BACKEND_DAI_MAX] = {
 	  LPASS_BE_SENARY_MI2S_TX},
 	{ AFE_PORT_ID_MI2S_HDMI_RX, 0, 0, 0, 0, 0, 0, 0, LPASS_BE_MI2S_HDMI_RX},
 };
-
 
 /* Track ASM playback & capture sessions of DAI */
 static struct msm_pcm_routing_fdai_data
@@ -625,11 +633,7 @@ int msm_pcm_routing_reg_phy_compr_stream(int fe_id, int perf_mode,
 			int app_type, app_type_idx, copp_idx, acdb_dev_id;
 			channels = msm_bedais[i].channel;
 
-			if (msm_bedais[i].format == SNDRV_PCM_FORMAT_S16_LE)
-				bit_width = 16;
-			else if (msm_bedais[i].format ==
-					SNDRV_PCM_FORMAT_S24_LE)
-				bit_width = 24;
+			bit_width = msm_routing_get_bit_width(msm_bedais[i].format);
 			app_type = (stream_type == SNDRV_PCM_STREAM_PLAYBACK) ?
 				   fe_dai_app_type_cfg[fe_id].app_type : 0;
 			if (app_type) {
@@ -691,6 +695,43 @@ int msm_pcm_routing_reg_phy_compr_stream(int fe_id, int perf_mode,
 	return 0;
 }
 
+static u32 msm_pcm_routing_get_voc_sessionid(u16 val)
+{
+	u32 session_id;
+
+	switch (val) {
+	case MSM_FRONTEND_DAI_CS_VOICE:
+		session_id = voc_get_session_id(VOICE_SESSION_NAME);
+		break;
+	case MSM_FRONTEND_DAI_VOLTE:
+		session_id = voc_get_session_id(VOLTE_SESSION_NAME);
+		break;
+	case MSM_FRONTEND_DAI_VOWLAN:
+		session_id = voc_get_session_id(VOWLAN_SESSION_NAME);
+		break;
+	case MSM_FRONTEND_DAI_VOICE2:
+		session_id = voc_get_session_id(VOICE2_SESSION_NAME);
+		break;
+	case MSM_FRONTEND_DAI_QCHAT:
+		session_id = voc_get_session_id(QCHAT_SESSION_NAME);
+		break;
+	case MSM_FRONTEND_DAI_VOIP:
+		session_id = voc_get_session_id(VOIP_SESSION_NAME);
+		break;
+	case MSM_FRONTEND_DAI_VOICEMMODE1:
+		session_id = voc_get_session_id(VOICEMMODE1_NAME);
+		break;
+	case MSM_FRONTEND_DAI_VOICEMMODE2:
+		session_id = voc_get_session_id(VOICEMMODE2_NAME);
+		break;
+	default:
+		session_id = 0;
+	}
+
+	pr_debug("%s session_id 0x%x", __func__, session_id);
+	return session_id;
+}
+
 int msm_pcm_routing_reg_phy_stream(int fedai_id, int perf_mode,
 					int dspst_id, int stream_type)
 {
@@ -732,11 +773,7 @@ int msm_pcm_routing_reg_phy_stream(int fedai_id, int perf_mode,
 			channels = msm_bedais[i].channel;
 			msm_bedais[i].compr_passthr_mode =
 				LEGACY_PCM;
-			if (msm_bedais[i].format == SNDRV_PCM_FORMAT_S16_LE)
-				bits_per_sample = 16;
-			else if (msm_bedais[i].format ==
-						SNDRV_PCM_FORMAT_S24_LE)
-				bits_per_sample = 24;
+			bits_per_sample = msm_routing_get_bit_width(msm_bedais[i].format);
 
 			app_type = (stream_type == SNDRV_PCM_STREAM_PLAYBACK) ?
 				   fe_dai_app_type_cfg[fedai_id].app_type : 0;
@@ -930,6 +967,7 @@ static void msm_pcm_routing_process_audio(u16 reg, u16 val, int set)
 			((msm_bedais[reg].port_id == VOICE_PLAYBACK_TX) ||
 			(msm_bedais[reg].port_id == VOICE2_PLAYBACK_TX)))
 			voc_start_playback(set, msm_bedais[reg].port_id);
+
 		set_bit(val, &msm_bedais[reg].fe_sessions);
 		fdai = &fe_dai_map[val][session_type];
 		if (msm_bedais[reg].active && fdai->strm_id !=
@@ -948,8 +986,7 @@ static void msm_pcm_routing_process_audio(u16 reg, u16 val, int set)
 						fdai->event_info.priv_data);
 				fdai->be_srate = 0; /* might not need it */
 			}
-			if (msm_bedais[reg].format == SNDRV_PCM_FORMAT_S24_LE)
-				bits_per_sample = 24;
+			bits_per_sample =  msm_routing_get_bit_width(msm_bedais[reg].format);
 
 			app_type = (session_type == SESSION_TYPE_RX) ?
 				   fe_dai_app_type_cfg[val].app_type : 0;
@@ -1085,25 +1122,11 @@ static int msm_routing_put_audio_mixer(struct snd_kcontrol *kcontrol,
 static void msm_pcm_routing_process_voice(u16 reg, u16 val, int set)
 {
 	u32 session_id = 0;
+	u16 path_type;
 
 	pr_debug("%s: reg %x val %x set %x\n", __func__, reg, val, set);
 
-	if (val == MSM_FRONTEND_DAI_CS_VOICE)
-		session_id = voc_get_session_id(VOICE_SESSION_NAME);
-	else if (val == MSM_FRONTEND_DAI_VOLTE)
-		session_id = voc_get_session_id(VOLTE_SESSION_NAME);
-	else if (val == MSM_FRONTEND_DAI_VOWLAN)
-		session_id = voc_get_session_id(VOWLAN_SESSION_NAME);
-	else if (val == MSM_FRONTEND_DAI_VOICE2)
-		session_id = voc_get_session_id(VOICE2_SESSION_NAME);
-	else if (val == MSM_FRONTEND_DAI_QCHAT)
-		session_id = voc_get_session_id(QCHAT_SESSION_NAME);
-	else if (val == MSM_FRONTEND_DAI_VOICEMMODE1)
-		session_id = voc_get_session_id(VOICEMMODE1_NAME);
-	else if (val == MSM_FRONTEND_DAI_VOICEMMODE2)
-		session_id = voc_get_session_id(VOICEMMODE2_NAME);
-	else
-		session_id = voc_get_session_id(VOIP_SESSION_NAME);
+	session_id = msm_pcm_routing_get_voc_sessionid(val);
 
 	pr_debug("%s: FE DAI 0x%x session_id 0x%x\n",
 		__func__, val, session_id);
@@ -1122,33 +1145,32 @@ static void msm_pcm_routing_process_voice(u16 reg, u16 val, int set)
 			 __func__, set, msm_bedais[reg].port_id);
 		afe_set_dtmf_gen_rx_portid(msm_bedais[reg].port_id, set);
 	}
-	mutex_unlock(&routing_lock);
 
 	if (afe_get_port_type(msm_bedais[reg].port_id) ==
-						MSM_AFE_PORT_TYPE_RX) {
-		voc_set_route_flag(session_id, RX_PATH, set);
-		if (set) {
-			voc_set_rxtx_port(session_id,
-				msm_bedais[reg].port_id, DEV_RX);
+						MSM_AFE_PORT_TYPE_RX)
+		path_type = RX_PATH;
+	else
+		path_type = TX_PATH;
 
-			if (voc_get_route_flag(session_id, RX_PATH) &&
-			   voc_get_route_flag(session_id, TX_PATH))
+	if (set) {
+		if (msm_bedais[reg].active) {
+			voc_set_route_flag(session_id, path_type, 1);
+			voc_set_device_config(session_id, path_type,
+			   msm_bedais[reg].channel, msm_bedais[reg].port_id);
+
+			if (voc_get_route_flag(session_id, TX_PATH) &&
+				voc_get_route_flag(session_id, RX_PATH))
 				voc_enable_device(session_id);
 		} else {
-			voc_disable_device(session_id);
+			pr_debug("%s BE is not active\n", __func__);
 		}
 	} else {
-		voc_set_route_flag(session_id, TX_PATH, set);
-		if (set) {
-			voc_set_rxtx_port(session_id,
-				msm_bedais[reg].port_id, DEV_TX);
-			if (voc_get_route_flag(session_id, RX_PATH) &&
-			   voc_get_route_flag(session_id, TX_PATH))
-				voc_enable_device(session_id);
-		} else {
-			voc_disable_device(session_id);
-		}
+		voc_set_route_flag(session_id, path_type, 0);
+		voc_disable_device(session_id);
 	}
+
+	mutex_unlock(&routing_lock);
+
 }
 
 static int msm_routing_get_voice_mixer(struct snd_kcontrol *kcontrol,
@@ -1546,6 +1568,11 @@ static int msm_routing_ec_ref_rx_put(struct snd_kcontrol *kcontrol,
 	int mux = ucontrol->value.enumerated.item[0];
 	struct soc_enum *e = (struct soc_enum *)kcontrol->private_value;
 
+	if (mux >= e->max) {
+		pr_err("%s: Invalid mux value %d\n", __func__, mux);
+		return -EINVAL;
+	}
+
 	mutex_lock(&routing_lock);
 	switch (ucontrol->value.integer.value[0]) {
 	case 0:
@@ -1670,6 +1697,11 @@ static int msm_routing_ext_ec_put(struct snd_kcontrol *kcontrol,
 	pr_debug("%s: msm_route_ec_ref_rx = %d value = %ld\n",
 		 __func__, msm_route_ext_ec_ref,
 		 ucontrol->value.integer.value[0]);
+
+	if (mux >= e->max) {
+		pr_err("%s: Invalid mux value %d\n", __func__, mux);
+		return -EINVAL;
+	}
 
 	mutex_lock(&routing_lock);
 	switch (ucontrol->value.integer.value[0]) {
@@ -6247,6 +6279,9 @@ static int msm_pcm_routing_close(struct snd_pcm_substream *substream)
 	struct msm_pcm_routing_bdai_data *bedai;
 	struct msm_pcm_routing_fdai_data *fdai;
 
+	pr_debug("%s: substream->pcm->id:%s\n",
+		 __func__, substream->pcm->id);
+
 	if (be_id >= MSM_BACKEND_DAI_MAX) {
 		pr_err("%s: unexpected be_id %d\n", __func__, be_id);
 		return -EINVAL;
@@ -6305,8 +6340,12 @@ static int msm_pcm_routing_prepare(struct snd_pcm_substream *substream)
 	struct msm_pcm_routing_bdai_data *bedai;
 	u32 channels, sample_rate;
 	bool playback, capture;
-	uint16_t bits_per_sample = 16;
+	uint16_t bits_per_sample = 16, voc_path_type;
 	struct msm_pcm_routing_fdai_data *fdai;
+	u32 session_id;
+
+	pr_debug("%s: substream->pcm->id:%s\n",
+		 __func__, substream->pcm->id);
 
 	if (be_id >= MSM_BACKEND_DAI_MAX) {
 		pr_err("%s: unexpected be_id %d\n", __func__, be_id);
@@ -6395,6 +6434,27 @@ static int msm_pcm_routing_prepare(struct snd_pcm_substream *substream)
 					LEGACY_PCM))
 				msm_pcm_routing_cfg_pp(bedai->port_id, copp_idx,
 						       topology, channels);
+		}
+	}
+
+	for_each_set_bit(i, &bedai->fe_sessions, MSM_FRONTEND_DAI_MAX) {
+		session_id = msm_pcm_routing_get_voc_sessionid(i);
+		if (session_id) {
+			pr_debug("%s voice session_id: 0x%x",
+				 __func__, session_id);
+
+			if (session_type == SESSION_TYPE_TX)
+				voc_path_type = TX_PATH;
+			else
+				voc_path_type = RX_PATH;
+
+			voc_set_route_flag(session_id, voc_path_type, 1);
+			voc_set_device_config(session_id,  voc_path_type,
+					      bedai->channel, bedai->port_id);
+
+			if (voc_get_route_flag(session_id, RX_PATH) &&
+				voc_get_route_flag(session_id, TX_PATH))
+					voc_enable_device(session_id);
 		}
 	}
 
@@ -6631,8 +6691,6 @@ static int msm_routing_probe(struct snd_soc_platform *platform)
 	snd_soc_add_platform_controls(platform,
 				device_pp_params_mixer_controls,
 				ARRAY_SIZE(device_pp_params_mixer_controls));
-
-	msm_dts_eagle_add_controls(platform);
 
 	snd_soc_add_platform_controls(platform, msm_source_tracking_controls,
 				      ARRAY_SIZE(msm_source_tracking_controls));

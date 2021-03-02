@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2015,2017,2021. The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -134,7 +134,6 @@ struct kgsl_memdesc_ops {
  * @pagetable: Pointer to the pagetable that the object is mapped in
  * @hostptr: Kernel virtual address
  * @hostptr_count: Number of threads using hostptr
- * @useraddr: User virtual address (if applicable)
  * @gpuaddr: GPU virtual address
  * @physaddr: Physical address of the memory object
  * @size: Size of the memory object
@@ -151,7 +150,6 @@ struct kgsl_memdesc {
 	struct kgsl_pagetable *pagetable;
 	void *hostptr;
 	unsigned int hostptr_count;
-	unsigned long useraddr;
 	uint64_t gpuaddr;
 	phys_addr_t physaddr;
 	uint64_t size;
@@ -202,6 +200,11 @@ struct kgsl_mem_entry {
 	unsigned int id;
 	struct kgsl_process_private *priv;
 	int pending_free;
+	/*
+	 * @map_count: Count how many vmas this object is mapped in - used for
+	 * debugfs accounting
+	 */
+	atomic_t map_count;
 };
 
 struct kgsl_device_private;
@@ -326,6 +329,8 @@ void kgsl_mem_entry_destroy(struct kref *kref);
 struct kgsl_mem_entry *kgsl_sharedmem_find_region(
 	struct kgsl_process_private *private, uint64_t gpuaddr,
 	uint64_t size);
+void kgsl_get_egl_counts(struct kgsl_mem_entry *entry,
+			int *egl_surface_count, int *egl_image_count);
 
 struct kgsl_mem_entry * __must_check
 kgsl_sharedmem_find_id(struct kgsl_process_private *process, unsigned int id);
@@ -404,13 +409,16 @@ static inline int timestamp_cmp(unsigned int a, unsigned int b)
 static inline int
 kgsl_mem_entry_get(struct kgsl_mem_entry *entry)
 {
-	return kref_get_unless_zero(&entry->refcount);
+	if (entry)
+		return kref_get_unless_zero(&entry->refcount);
+	return 0;
 }
 
 static inline void
 kgsl_mem_entry_put(struct kgsl_mem_entry *entry)
 {
-	kref_put(&entry->refcount, kgsl_mem_entry_destroy);
+	if (entry)
+		kref_put(&entry->refcount, kgsl_mem_entry_destroy);
 }
 
 /*

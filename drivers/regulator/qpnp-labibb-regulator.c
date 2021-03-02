@@ -30,10 +30,13 @@
 #include <linux/spmi.h>
 #include <linux/string.h>
 #include <linux/qpnp-revid.h>
+<<<<<<< HEAD
 #ifdef CONFIG_SOMC_LCD_OCP_ENABLED
 #include <linux/interrupt.h>
 #include <linux/qpnp/power-on.h>
 #endif /* SOMC_LCD_OCP_ENABLED */
+=======
+>>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 
 #define QPNP_LABIBB_REGULATOR_DRIVER_NAME	"qcom,qpnp-labibb-regulator"
 

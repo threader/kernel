@@ -1077,8 +1077,11 @@ static int flash_regulator_parse_dt(struct qpnp_flash_led *led,
 					sizeof(struct flash_regulator_data *) *
 						flash_node->num_regulators,
 						GFP_KERNEL);
-	if (!flash_node->reg_data)
+	if (!flash_node->reg_data) {
+		dev_err(&led->spmi_dev->dev,
+				"Unable to allocate memory\n");
 		return -ENOMEM;
+	}
 
 	for_each_child_of_node(node, temp) {
 		rc = of_property_read_string(temp, "regulator-name",
@@ -1091,19 +1094,20 @@ static int flash_regulator_parse_dt(struct qpnp_flash_led *led,
 			return rc;
 		}
 
-		rc = of_property_read_u32(temp, "max-voltage", &val);
-		if (!rc) {
-			flash_node->reg_data[i].max_volt_uv = val;
-		} else if (rc != -EINVAL) {
-			dev_err(&led->spmi_dev->dev,
-					"Unable to read max voltage\n");
-			return rc;
+		if (of_find_property(temp, "max-voltage", NULL)) {
+			rc = of_property_read_u32(temp, "max-voltage", &val);
+			if (!rc) {
+				flash_node->reg_data[i].max_volt_uv = val;
+			} else {
+				dev_err(&led->spmi_dev->dev,
+						"Unable to read max voltage\n");
+				return rc;
+			}
 		}
-
 		i++;
 	}
 
-	return 0;
+	return rc;
 }
 
 static int flash_regulator_setup(struct qpnp_flash_led *led,
@@ -2485,7 +2489,7 @@ static int qpnp_flash_led_probe(struct spmi_device *spmi)
 			goto error_led_register;
 		}
 
-		if (led->flash_node[i].num_regulators) {
+		if (&led->flash_node[i].num_regulators) {
 			rc = flash_regulator_parse_dt(led, &led->flash_node[i]);
 			if (rc) {
 				dev_err(&led->spmi_dev->dev,
@@ -2523,7 +2527,7 @@ static int qpnp_flash_led_probe(struct spmi_device *spmi)
 			(long)root);
 		if (PTR_ERR(root) == -ENODEV)
 			pr_err("debugfs is not enabled in kernel");
-		goto error_led_register;
+		goto error_led_debugfs;
 	}
 
 	led->dbgfs_root = root;
@@ -2531,27 +2535,30 @@ static int qpnp_flash_led_probe(struct spmi_device *spmi)
 					led, &flash_led_dfs_dbg_feature_fops);
 	if (!file) {
 		pr_err("error creating 'enable_debug' entry\n");
-		goto error_led_register;
+		goto error_led_debugfs;
 	}
 
 	file = debugfs_create_file("latched", S_IRUSR | S_IWUSR, root, led,
 					&flash_led_dfs_latched_reg_fops);
 	if (!file) {
 		pr_err("error creating 'latched' entry\n");
-		goto error_led_register;
+		goto error_led_debugfs;
 	}
 
 	file = debugfs_create_file("strobe", S_IRUSR | S_IWUSR, root, led,
 					&flash_led_dfs_strobe_reg_fops);
 	if (!file) {
 		pr_err("error creating 'strobe' entry\n");
-		goto error_led_register;
+		goto error_led_debugfs;
 	}
 #endif
 	dev_set_drvdata(&spmi->dev, led);
 
 	return 0;
 
+error_led_debugfs:
+	i = led->num_leds - 1;
+	j = ARRAY_SIZE(qpnp_flash_led_attrs) - 1;
 error_led_register:
 	for (; i >= 0; i--) {
 		for (; j >= 0; j--)

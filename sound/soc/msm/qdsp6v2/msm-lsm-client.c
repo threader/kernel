@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2017, Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2017, 2019 Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -187,7 +187,8 @@ static int lsm_lab_buffer_sanity(struct lsm_priv *prtd,
 }
 
 static void lsm_event_handler(uint32_t opcode, uint32_t token,
-			      void *payload, void *priv)
+			      void *payload, uint16_t client_size,
+				void *priv)
 {
 	unsigned long flags;
 	struct lsm_priv *prtd = priv;
@@ -254,6 +255,12 @@ static void lsm_event_handler(uint32_t opcode, uint32_t token,
 	}
 
 	case LSM_SESSION_EVENT_DETECTION_STATUS:
+		if (client_size < 3 * sizeof(uint8_t)) {
+			dev_err(rtd->dev,
+					"%s: client_size has invalid size[%d]\n",
+					__func__, client_size);
+			return;
+		}
 		status = (uint16_t)((uint8_t *)payload)[0];
 		payload_size = (uint16_t)((uint8_t *)payload)[2];
 		index = 4;
@@ -263,6 +270,12 @@ static void lsm_event_handler(uint32_t opcode, uint32_t token,
 	break;
 
 	case LSM_SESSION_EVENT_DETECTION_STATUS_V2:
+		if (client_size < 2 * sizeof(uint8_t)) {
+			dev_err(rtd->dev,
+					"%s: client_size has invalid size[%d]\n",
+					__func__, client_size);
+			return;
+		}
 		status = (uint16_t)((uint8_t *)payload)[0];
 		payload_size = (uint16_t)((uint8_t *)payload)[1];
 		index = 2;
@@ -289,12 +302,22 @@ static void lsm_event_handler(uint32_t opcode, uint32_t token,
 		prtd->event_status->status = status;
 		prtd->event_status->payload_size = payload_size;
 		if (likely(prtd->event_status)) {
-			memcpy(prtd->event_status->payload,
-			       &((uint8_t *)payload)[index],
-			       payload_size);
-			prtd->event_avail = 1;
-			spin_unlock_irqrestore(&prtd->event_lock, flags);
-			wake_up(&prtd->event_wait);
+			if (client_size >= (payload_size + index)) {
+				memcpy(prtd->event_status->payload,
+					&((uint8_t *)payload)[index],
+					payload_size);
+				prtd->event_avail = 1;
+				spin_unlock_irqrestore(&prtd->event_lock,
+								flags);
+				wake_up(&prtd->event_wait);
+			} else {
+				spin_unlock_irqrestore(&prtd->event_lock,
+								flags);
+				dev_err(rtd->dev,
+						"%s: Failed to copy memory with invalid size = %d\n",
+						__func__, payload_size);
+				return;
+			}
 		} else {
 			spin_unlock_irqrestore(&prtd->event_lock, flags);
 			dev_err(rtd->dev,
@@ -750,10 +773,9 @@ static int msm_lsm_ioctl_shared(struct snd_pcm_substream *substream,
 			dev_err(rtd->dev,
 				"%s: lsm open failed, %d\n",
 				__func__, ret);
-			q6lsm_client_free(prtd->lsm_client);
-			kfree(prtd);
 			return ret;
 		}
+		prtd->lsm_client->opened = true;
 		dev_dbg(rtd->dev, "%s: Session_ID = %d, APP ID = %d\n",
 			__func__,
 			prtd->lsm_client->session,
@@ -1149,7 +1171,7 @@ static int msm_lsm_ioctl_compat(struct snd_pcm_substream *substream,
 		}
 
 		size = sizeof(*user) + userarg32.payload_size;
-		user = kmalloc(size, GFP_KERNEL);
+		user = kzalloc(size, GFP_KERNEL);
 		if (!user) {
 			dev_err(rtd->dev,
 				"%s: Allocation failed event status size %d\n",
@@ -1170,7 +1192,7 @@ static int msm_lsm_ioctl_compat(struct snd_pcm_substream *substream,
 			err = -EFAULT;
 		}
 		if (!err) {
-			user32 = kmalloc(size, GFP_KERNEL);
+			user32 = kzalloc(size, GFP_KERNEL);
 			if (!user32) {
 				dev_err(rtd->dev,
 					"%s: Allocation event user status size %d\n",
@@ -1583,7 +1605,7 @@ static int msm_lsm_ioctl(struct snd_pcm_substream *substream,
 
 		size = sizeof(struct snd_lsm_event_status) +
 		userarg.payload_size;
-		user = kmalloc(size, GFP_KERNEL);
+		user = kzalloc(size, GFP_KERNEL);
 		if (!user) {
 			dev_err(rtd->dev,
 				"%s: Allocation failed event status size %d\n",
@@ -1683,6 +1705,7 @@ static int msm_lsm_open(struct snd_pcm_substream *substream)
 		runtime->private_data = NULL;
 		return -ENOMEM;
 	}
+	prtd->lsm_client->opened = false;
 	return 0;
 }
 
@@ -1755,7 +1778,10 @@ static int msm_lsm_close(struct snd_pcm_substream *substream)
 				 __func__);
 	}
 
-	q6lsm_close(prtd->lsm_client);
+	if (prtd->lsm_client->opened) {
+		q6lsm_close(prtd->lsm_client);
+		prtd->lsm_client->opened = false;
+	}
 	q6lsm_client_free(prtd->lsm_client);
 
 	spin_lock_irqsave(&prtd->event_lock, flags);
@@ -1764,6 +1790,7 @@ static int msm_lsm_close(struct snd_pcm_substream *substream)
 	spin_unlock_irqrestore(&prtd->event_lock, flags);
 	mutex_destroy(&prtd->lsm_api_lock);
 	kfree(prtd);
+	runtime->private_data = NULL;
 
 	return 0;
 }
