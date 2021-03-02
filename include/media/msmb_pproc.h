@@ -3,8 +3,11 @@
 #define MSM_OUTPUT_BUF_CNT 8
 
 #include <uapi/media/msmb_pproc.h>
+#ifdef MSM_CAMERA_BIONIC
+#include <sys/types.h>
+#endif
+#ifdef CONFIG_COMPAT
 #include <linux/compat.h>
-<<<<<<< HEAD
 #endif
 #include <linux/videodev2.h>
 #include <linux/types.h>

@@ -1326,11 +1326,7 @@ void zs_unmap_object(struct zs_pool *pool, unsigned long handle)
 	class = pool->size_class[class_idx];
 	off = obj_idx_to_offset(page, obj_idx, class->size);
 
-<<<<<<< HEAD
-	area = &__get_cpu_var(zs_map_area);
-=======
 	area = this_cpu_ptr(&zs_map_area);
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 	if (off + class->size <= PAGE_SIZE)
 		kunmap_atomic(area->vm_addr);
 	else {
@@ -1776,11 +1772,6 @@ unsigned long zs_compact(struct zs_pool *pool)
 		nr_migrated += __zs_compact(pool, class);
 	}
 
-<<<<<<< HEAD
-	synchronize_rcu();
-
-=======
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 	return nr_migrated;
 }
 EXPORT_SYMBOL_GPL(zs_compact);
