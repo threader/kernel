@@ -53,7 +53,6 @@ Description:
 What:		/sys/block/zram<id>/failed_writes
 Date:		February 2014
 Contact:	Sergey Senozhatsky <sergey.senozhatsky@gmail.com>
-<<<<<<< HEAD
 Description:
 		The failed_writes file is read-only and specifies the number of
 		failed writes happened on this device.
