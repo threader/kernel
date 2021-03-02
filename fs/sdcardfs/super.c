@@ -26,8 +26,6 @@
  */
 static struct kmem_cache *sdcardfs_inode_cachep;
 
-<<<<<<< HEAD
-=======
 /*
  * To support the top references, we must track some data separately.
  * An sdcardfs_inode_info always has a reference to its data, and once set up,
@@ -45,7 +43,6 @@ void data_release(struct kref *ref)
 	kmem_cache_free(sdcardfs_inode_data_cachep, data);
 }
 
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 /* final actions when unmounting a file system */
 static void sdcardfs_put_super(struct super_block *sb)
 {
@@ -56,11 +53,7 @@ static void sdcardfs_put_super(struct super_block *sb)
 	if (!spd)
 		return;
 
-<<<<<<< HEAD
-	if(spd->obbpath_s) {
-=======
 	if (spd->obbpath_s) {
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 		kfree(spd->obbpath_s);
 		path_put(&spd->obbpath);
 	}
@@ -88,11 +81,7 @@ static int sdcardfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 	if (sbi->options.reserved_mb) {
 		/* Invalid statfs informations. */
 		if (buf->f_bsize == 0) {
-<<<<<<< HEAD
-			printk(KERN_ERR "Returned block size is zero.\n");
-=======
 			pr_err("Returned block size is zero.\n");
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 			return -EINVAL;
 		}
 
@@ -128,12 +117,7 @@ static int sdcardfs_remount_fs(struct super_block *sb, int *flags, char *options
 	 * SILENT, but anything else left over is an error.
 	 */
 	if ((*flags & ~(MS_RDONLY | MS_MANDLOCK | MS_SILENT)) != 0) {
-<<<<<<< HEAD
-		printk(KERN_ERR
-		       "sdcardfs: remount flags 0x%x unsupported\n", *flags);
-=======
 		pr_err("sdcardfs: remount flags 0x%x unsupported\n", *flags);
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 		err = -EINVAL;
 	}
 
@@ -141,8 +125,6 @@ static int sdcardfs_remount_fs(struct super_block *sb, int *flags, char *options
 }
 
 /*
-<<<<<<< HEAD
-=======
  * @mnt: mount point we are remounting
  * @sb: superblock we are remounting
  * @flags: numeric mount options
@@ -191,7 +173,6 @@ static void sdcardfs_copy_mnt_data(void *data, void *newdata)
 }
 
 /*
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
  * Called by iput() when the inode reference count reached zero
  * and the inode is not hashed anywhere.  Used to clear anything
  * that needs to be, before the inode is completely destroyed and put
@@ -202,10 +183,7 @@ static void sdcardfs_evict_inode(struct inode *inode)
 	struct inode *lower_inode;
 
 	truncate_inode_pages(&inode->i_data, 0);
-<<<<<<< HEAD
-=======
 	set_top(SDCARDFS_I(inode), NULL);
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 	clear_inode(inode);
 	/*
 	 * Decrement a reference to a lower_inode, which was incremented
@@ -219,10 +197,7 @@ static void sdcardfs_evict_inode(struct inode *inode)
 static struct inode *sdcardfs_alloc_inode(struct super_block *sb)
 {
 	struct sdcardfs_inode_info *i;
-<<<<<<< HEAD
-=======
 	struct sdcardfs_inode_data *d;
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 
 	i = kmem_cache_alloc(sdcardfs_inode_cachep, GFP_KERNEL);
 	if (!i)
@@ -231,8 +206,6 @@ static struct inode *sdcardfs_alloc_inode(struct super_block *sb)
 	/* memset everything up to the inode to 0 */
 	memset(i, 0, offsetof(struct sdcardfs_inode_info, vfs_inode));
 
-<<<<<<< HEAD
-=======
 	d = kmem_cache_alloc(sdcardfs_inode_data_cachep,
 					GFP_KERNEL | __GFP_ZERO);
 	if (!d) {
@@ -243,18 +216,10 @@ static struct inode *sdcardfs_alloc_inode(struct super_block *sb)
 	i->data = d;
 	kref_init(&d->refcount);
 
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 	i->vfs_inode.i_version = 1;
 	return &i->vfs_inode;
 }
 
-<<<<<<< HEAD
-static void sdcardfs_destroy_inode(struct inode *inode)
-{
-	kmem_cache_free(sdcardfs_inode_cachep, SDCARDFS_I(inode));
-}
-
-=======
 static void i_callback(struct rcu_head *head)
 {
 	struct inode *inode = container_of(head, struct inode, i_rcu);
@@ -268,7 +233,6 @@ static void sdcardfs_destroy_inode(struct inode *inode)
 	call_rcu(&inode->i_rcu, i_callback);
 }
 
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 /* sdcardfs inode cache constructor */
 static void init_once(void *obj)
 {
@@ -279,20 +243,10 @@ static void init_once(void *obj)
 
 int sdcardfs_init_inode_cache(void)
 {
-<<<<<<< HEAD
-	int err = 0;
-
-=======
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 	sdcardfs_inode_cachep =
 		kmem_cache_create("sdcardfs_inode_cache",
 				  sizeof(struct sdcardfs_inode_info), 0,
 				  SLAB_RECLAIM_ACCOUNT, init_once);
-<<<<<<< HEAD
-	if (!sdcardfs_inode_cachep)
-		err = -ENOMEM;
-	return err;
-=======
 
 	if (!sdcardfs_inode_cachep)
 		return -ENOMEM;
@@ -307,19 +261,13 @@ int sdcardfs_init_inode_cache(void)
 	}
 
 	return 0;
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 }
 
 /* sdcardfs inode cache destructor */
 void sdcardfs_destroy_inode_cache(void)
 {
-<<<<<<< HEAD
-	if (sdcardfs_inode_cachep)
-		kmem_cache_destroy(sdcardfs_inode_cachep);
-=======
 	kmem_cache_destroy(sdcardfs_inode_data_cachep);
 	kmem_cache_destroy(sdcardfs_inode_cachep);
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 }
 
 /*
@@ -335,21 +283,6 @@ static void sdcardfs_umount_begin(struct super_block *sb)
 		lower_sb->s_op->umount_begin(lower_sb);
 }
 
-<<<<<<< HEAD
-static int sdcardfs_show_options(struct seq_file *m, struct dentry *root)
-{
-	struct sdcardfs_sb_info *sbi = SDCARDFS_SB(root->d_sb);
-	struct sdcardfs_mount_options *opts = &sbi->options;
-
-	if (opts->fs_low_uid != 0)
-		seq_printf(m, ",uid=%u", opts->fs_low_uid);
-	if (opts->fs_low_gid != 0)
-		seq_printf(m, ",gid=%u", opts->fs_low_gid);
-
-	if (opts->multiuser)
-		seq_printf(m, ",multiuser");
-
-=======
 static int sdcardfs_show_options(struct vfsmount *mnt, struct seq_file *m,
 			struct dentry *root)
 {
@@ -371,7 +304,6 @@ static int sdcardfs_show_options(struct vfsmount *mnt, struct seq_file *m,
 		seq_printf(m, ",userid=%u", opts->fs_user_id);
 	if (opts->gid_derivation)
 		seq_puts(m, ",derive_gid");
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 	if (opts->reserved_mb != 0)
 		seq_printf(m, ",reserved=%uMB", opts->reserved_mb);
 
@@ -382,18 +314,12 @@ const struct super_operations sdcardfs_sops = {
 	.put_super	= sdcardfs_put_super,
 	.statfs		= sdcardfs_statfs,
 	.remount_fs	= sdcardfs_remount_fs,
-<<<<<<< HEAD
-	.evict_inode	= sdcardfs_evict_inode,
-	.umount_begin	= sdcardfs_umount_begin,
-	.show_options	= sdcardfs_show_options,
-=======
 	.remount_fs2	= sdcardfs_remount_fs2,
 	.clone_mnt_data	= sdcardfs_clone_mnt_data,
 	.copy_mnt_data	= sdcardfs_copy_mnt_data,
 	.evict_inode	= sdcardfs_evict_inode,
 	.umount_begin	= sdcardfs_umount_begin,
 	.show_options2	= sdcardfs_show_options,
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 	.alloc_inode	= sdcardfs_alloc_inode,
 	.destroy_inode	= sdcardfs_destroy_inode,
 	.drop_inode	= generic_delete_inode,

@@ -3832,9 +3832,6 @@ static int tasha_codec_enable_hphr_pa(struct snd_soc_dapm_widget *w,
 			snd_soc_update_bits(codec,
 					    WCD9335_CDC_RX2_RX_PATH_MIX_CTL,
 					    0x10, 0x00);
-<<<<<<< HEAD
-
-=======
 
 		if (!(strcmp(w->name, "ANC HPHR PA"))) {
 			/* Do everything needed for left channel */

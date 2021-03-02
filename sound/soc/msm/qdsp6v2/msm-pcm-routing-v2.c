@@ -1,9 +1,4 @@
-<<<<<<< HEAD
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
- * Copyright (C) 2013 Sony Mobile Communications Inc.
-=======
 /* Copyright (c) 2012-2015, 2017 The Linux Foundation. All rights reserved.
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and

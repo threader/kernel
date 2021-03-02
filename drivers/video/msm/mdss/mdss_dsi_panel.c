@@ -2171,12 +2171,9 @@ static int mdss_panel_parse_dt(struct device_node *np,
 		pinfo->mipi.dst_format =
 			DSI_VIDEO_DST_FORMAT_RGB888;
 	}
-<<<<<<< HEAD
-=======
 	pdest = of_get_property(np,
 		"qcom,mdss-dsi-panel-destination", NULL);
 
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 	rc = of_property_read_u32(np,
 		"qcom,mdss-dsi-underflow-color", &tmp);
 	pinfo->lcdc.underflow_clr = (!rc ? tmp : 0xff);

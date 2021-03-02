@@ -467,11 +467,6 @@ struct dentry *msm_vidc_debugfs_init_inst(struct msm_vidc_inst *inst,
 
 	if (!inst) {
 		dprintk(VIDC_ERR, "Invalid params, inst: %pK\n", inst);
-<<<<<<< HEAD
-		goto failed_create_dir;
-	}
-	snprintf(debugfs_name, MAX_DEBUGFS_NAME, "inst_%pK", inst);
-=======
 		goto exit;
 	}
 
@@ -486,7 +481,6 @@ struct dentry *msm_vidc_debugfs_init_inst(struct msm_vidc_inst *inst,
 	idata->core = inst->core;
 	idata->inst = inst;
 
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 	dir = debugfs_create_dir(debugfs_name, parent);
 	if (!dir) {
 		dprintk(VIDC_ERR, "Failed to create debugfs for msm_vidc\n");

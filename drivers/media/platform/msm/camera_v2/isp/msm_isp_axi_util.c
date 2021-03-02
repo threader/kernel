@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
-=======
 /* Copyright (c) 2013-2018, The Linux Foundation. All rights reserved.
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1312,20 +1308,11 @@ int msm_isp_release_axi_stream(struct vfe_device *vfe_dev, void *arg)
 	return rc;
 }
 
-<<<<<<< HEAD
-static int msm_isp_axi_stream_enable_cfg(
-	struct vfe_device *vfe_dev,
-	struct msm_vfe_axi_stream *stream_info,
-	uint32_t dual_vfe_sync)
-{
-	int i, enable_wm = 0, vfe_id = 0;
-=======
 static int  msm_isp_axi_stream_enable_cfg(
 	struct vfe_device *vfe_dev,
 	struct msm_vfe_axi_stream *stream_info, int32_t dual_vfe_sync)
 {
 	int i, vfe_id = 0, enable_wm = 0;
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 	struct msm_vfe_axi_shared_data *axi_data = &vfe_dev->axi_data;
 	uint32_t stream_idx = HANDLE_TO_IDX(stream_info->stream_handle);
 	struct dual_vfe_resource *dual_vfe_res = NULL;
@@ -1337,29 +1324,18 @@ static int  msm_isp_axi_stream_enable_cfg(
 
 	if (stream_info->state == INACTIVE)
 		goto error;
-<<<<<<< HEAD
-	if (stream_info->state == START_PENDING ||
-		stream_info->state == RESUME_PENDING ||
-		stream_info->state == STARTING) {
-=======
 
 	if (stream_info->state == START_PENDING ||
 		stream_info->state == RESUME_PENDING) {
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 		enable_wm = 1;
 	} else {
 		enable_wm = 0;
 	}
-<<<<<<< HEAD
-
-	for (i = 0; i < stream_info->num_planes; i++) {
-=======
 	for (i = 0; i < stream_info->num_planes; i++) {
 		/*
 		 * In case when sensor is streaming, use dual vfe sync mode
 		 * to enable wm together and avoid split.
 		 */
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 		if ((stream_info->stream_src < RDI_INTF_0) &&
 			vfe_dev->is_split && vfe_dev->pdev->id == ISP_VFE1 &&
 			dual_vfe_sync) {
@@ -1378,34 +1354,22 @@ static int  msm_isp_axi_stream_enable_cfg(
 			}
 			for (vfe_id = 0; vfe_id < MAX_VFE; vfe_id++) {
 				vfe_dev->hw_info->vfe_ops.axi_ops.
-<<<<<<< HEAD
-				enable_wm(dual_vfe_res->vfe_dev[vfe_id],
-				dual_vfe_res->axi_data[vfe_id]->
-				stream_info[stream_idx].wm[i],
-				enable_wm);
-=======
 				enable_wm(dual_vfe_res->vfe_base[vfe_id],
 					dual_vfe_res->axi_data[vfe_id]->
 					stream_info[stream_idx].wm[i],
 					enable_wm);
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 			}
 		} else if (!vfe_dev->is_split ||
 			(stream_info->stream_src >= RDI_INTF_0 &&
 			stream_info->stream_src <= RDI_INTF_2) ||
 			!dual_vfe_sync) {
 			vfe_dev->hw_info->vfe_ops.axi_ops.
-<<<<<<< HEAD
-			enable_wm(vfe_dev, stream_info->wm[i],
-				enable_wm);
-=======
 			enable_wm(vfe_dev->vfe_base, stream_info->wm[i],
 					enable_wm);
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 		}
 		if (!enable_wm) {
 			/* Issue a reg update for Raw Snapshot Case
-				since we dont have reg update ack
+			 * since we dont have reg update ack
 			*/
 			if (vfe_dev->axi_data.src_info[VFE_PIX_0].
 				raw_stream_count > 0
@@ -1414,23 +1378,15 @@ static int  msm_isp_axi_stream_enable_cfg(
 				if (stream_info->stream_src == CAMIF_RAW ||
 					stream_info->stream_src == IDEAL_RAW) {
 					vfe_dev->hw_info->vfe_ops.core_ops.
-					reg_update(vfe_dev,
-					VFE_PIX_0);
+						reg_update(vfe_dev,
+						VFE_PIX_0);
 				}
-		}
-
+			}
 		}
 	}
-<<<<<<< HEAD
-
-	if (stream_info->state == START_PENDING ||
-		stream_info->state == STARTING)
-=======
 	if (stream_info->state == START_PENDING)
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 		axi_data->num_active_stream++;
-	else if (stream_info->state == STOP_PENDING ||
-		stream_info->state == STOPPING)
+	else if (stream_info->state == STOP_PENDING)
 		axi_data->num_active_stream--;
 	return 0;
 error:
@@ -1459,13 +1415,10 @@ void msm_isp_axi_stream_update(struct vfe_device *vfe_dev,
 			axi_data->stream_info[i].state = ACTIVE;
 		else if (axi_data->stream_info[i].state == START_PENDING ||
 			axi_data->stream_info[i].state == STOP_PENDING) {
-<<<<<<< HEAD
-=======
 			msm_isp_axi_stream_enable_cfg(
 				vfe_dev, &axi_data->stream_info[i],
 				axi_data->stream_info[i].state ==
 				START_PENDING ? 1 : 0);
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 			axi_data->stream_info[i].state =
 				axi_data->stream_info[i].state ==
 				START_PENDING ? STARTING : STOPPING;
@@ -1547,12 +1500,7 @@ void msm_isp_axi_cfg_update(struct vfe_device *vfe_dev,
 	struct msm_vfe_axi_stream *stream_info;
 	int num_stream = 0;
 
-<<<<<<< HEAD
-	spin_lock_irqsave(&vfe_dev->common_data->
-		common_dev_axi_lock, flags);
-=======
 	spin_lock_irqsave(&vfe_dev->common_data->common_dev_data_lock, flags);
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 	for (i = 0; i < VFE_AXI_SRC_MAX; i++) {
 		if (SRC_TO_INTF(axi_data->stream_info[i].stream_src) !=
 			frame_src) {
@@ -1574,27 +1522,14 @@ void msm_isp_axi_cfg_update(struct vfe_device *vfe_dev,
 					cfg_wm_reg(vfe_dev, stream_info, j);
 			/*Resume AXI*/
 			stream_info->state = RESUME_PENDING;
-<<<<<<< HEAD
-			msm_isp_update_dual_HW_axi(vfe_dev,
-				stream_info);
-		} else if (stream_info->state == RESUMING) {
-			msm_isp_update_dual_HW_stream_state(vfe_dev,
-				stream_info);
-=======
 			msm_isp_update_dual_HW_axi(vfe_dev, stream_info);
 		} else if (stream_info->state == RESUMING) {
 			msm_isp_update_dual_HW_axi(vfe_dev, stream_info);
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 		}
 		spin_unlock_irqrestore(&stream_info->lock, flags1);
 	}
-<<<<<<< HEAD
-	spin_unlock_irqrestore(&vfe_dev->common_data->
-		common_dev_axi_lock, flags);
-=======
 	spin_unlock_irqrestore(&vfe_dev->common_data->common_dev_data_lock,
 		flags);
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 	if (num_stream)
 		update_state = atomic_dec_return(
 			&axi_data->axi_cfg_update[frame_src]);
@@ -1678,60 +1613,8 @@ void msm_isp_halt_send_error(struct vfe_device *vfe_dev, uint32_t event)
 	msm_isp_send_event(vfe_dev, event, &error_event);
 }
 
-<<<<<<< HEAD
-void msm_isp_halt_send_error(struct vfe_device *vfe_dev, uint32_t event)
-{
-	uint32_t i = 0, vfe_id = 0;
-	struct msm_isp_event_data error_event;
-	struct msm_vfe_axi_halt_cmd halt_cmd;
-	struct dual_vfe_resource *dual_vfe_res = NULL;
-
-	memset(&halt_cmd, 0, sizeof(struct msm_vfe_axi_halt_cmd));
-	memset(&error_event, 0, sizeof(struct msm_isp_event_data));
-	halt_cmd.stop_camif = 1;
-	halt_cmd.overflow_detected = 0;
-	halt_cmd.blocking_halt = 0;
-
-	pr_err("%s: vfe%d fatal error!\n", __func__, vfe_dev->pdev->id);
-
-	atomic_set(&vfe_dev->error_info.overflow_state,
-		HALT_ENFORCED);
-
-	/* heavy spin lock in axi halt, avoid spin lock outside. */
-	dual_vfe_res = vfe_dev->common_data->dual_vfe_res;
-	if (vfe_dev->is_split) {
-		for (vfe_id = 0; vfe_id < MAX_VFE; vfe_id++) {
-			msm_isp_axi_halt(dual_vfe_res->vfe_dev[vfe_id],
-				&halt_cmd);
-		}
-	} else {
-		msm_isp_axi_halt(vfe_dev, &halt_cmd);
-	}
-
-	if (vfe_dev->is_split) {
-		for (i = 0; i < VFE_AXI_SRC_MAX; i++) {
-			dual_vfe_res->axi_data[ISP_VFE0]->stream_info[i].
-				state = INACTIVE;
-			dual_vfe_res->axi_data[ISP_VFE1]->stream_info[i].
-				state = INACTIVE;
-		}
-	} else  {
-		for (i = 0; i < VFE_AXI_SRC_MAX; i++)
-			vfe_dev->axi_data.stream_info[i].state =
-				INACTIVE;
-	}
-
-	error_event.frame_id =
-		vfe_dev->axi_data.src_info[VFE_PIX_0].frame_id;
-
-	msm_isp_send_event(vfe_dev, event, &error_event);
-}
-
-int msm_isp_print_ping_pong_address(struct vfe_device *vfe_dev)
-=======
 int msm_isp_print_ping_pong_address(struct vfe_device *vfe_dev,
 	unsigned long fault_addr)
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 {
 	int i, j;
 	struct msm_isp_buffer *buf = NULL;
@@ -1807,25 +1690,6 @@ static struct msm_isp_buffer *msm_isp_get_stream_buffer(
 	rc = vfe_dev->buf_mgr->ops->get_buf(vfe_dev->buf_mgr,
 		vfe_dev->pdev->id, bufq_handle, &buf);
 
-<<<<<<< HEAD
-	if (valid_address == 1 && !skip_get_buf) {
-		pingpong_bit = (~(pingpong_status >>
-			stream_info->wm[i]) & 0x1);
-		rc = vfe_dev->buf_mgr->ops->get_buf(vfe_dev->buf_mgr,
-			vfe_dev->pdev->id, bufq_handle, &buf, &buf_cnt,
-			pingpong_bit);
-		if (rc == -EFAULT) {
-			pr_err("%s: get_buf fail\n", __func__);
-			return rc;
-		}
-		if (rc < 0 || buf == NULL) {
-			ISP_DBG("%s vfe %d get_buf fail bufq %x\n", __func__,
-				vfe_dev->pdev->id, bufq_handle);
-			vfe_dev->error_info.
-				stream_framedrop_count[bufq_handle & 0xFF]++;
-			vfe_dev->error_info.framedrop_flag = 1;
-			return rc;
-=======
 	if (rc == -EFAULT) {
 		msm_isp_halt_send_error(vfe_dev,
 			ISP_EVENT_BUF_FATAL_ERROR);
@@ -1870,7 +1734,6 @@ int msm_isp_cfg_offline_ping_pong_address(struct vfe_device *vfe_dev,
 			pr_err("%s: No fetch buffer rc= %d buf= %pK\n",
 				__func__, rc, buf);
 			return -EINVAL;
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 		}
 
 		if (buf->num_planes != stream_info->num_planes) {
@@ -1998,37 +1861,6 @@ static int msm_isp_cfg_ping_pong_address(struct vfe_device *vfe_dev,
 				stream_info->stream_id);
 		}
 
-<<<<<<< HEAD
-		if ((stream_info->stream_src < RDI_INTF_0) &&
-			vfe_dev->is_split &&
-			(buf_cnt >= MAX_VFE) && sync_dual_vfe) {
-			dual_vfe_res = vfe_dev->common_data->dual_vfe_res;
-			if (!dual_vfe_res->vfe_base[ISP_VFE0] ||
-				!dual_vfe_res->axi_data[ISP_VFE0] ||
-				!dual_vfe_res->vfe_base[ISP_VFE1] ||
-				!dual_vfe_res->axi_data[ISP_VFE1]) {
-				pr_err("%s:%d failed vfe0 %pK %pK vfe %pK %pK\n",
-					__func__, __LINE__,
-					dual_vfe_res->vfe_base[ISP_VFE0],
-					dual_vfe_res->axi_data[ISP_VFE0],
-					dual_vfe_res->vfe_base[ISP_VFE1],
-					dual_vfe_res->axi_data[ISP_VFE1]);
-			} else {
-				/* Isolate pingpong_bit from pingpong_status */
-				pingpong_bit = ((pingpong_status >>
-					stream_info->wm[i]) & 0x1);
-				ISP_DBG("%s: vfe %d config buf %d to pingpong %d stream %x\n",
-					__func__, vfe_dev->pdev->id,
-					buf->buf_idx, !pingpong_bit,
-					bufq_handle);
-				for (vfe_id = 0; vfe_id < MAX_VFE; vfe_id++) {
-					if (vfe_id != vfe_dev->pdev->id)
-						spin_lock_irqsave(
-							&dual_vfe_res->
-							axi_data[vfe_id]->
-							stream_info[stream_idx].
-							lock, flags);
-=======
 		if (dual_vfe_res) {
 			for (vfe_id = 0; vfe_id < MAX_VFE; vfe_id++) {
 				if (vfe_id != vfe_dev->pdev->id)
@@ -2039,7 +1871,6 @@ static int msm_isp_cfg_ping_pong_address(struct vfe_device *vfe_dev,
 						lock, flags);
 
 				if (buf)
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 					vfe_dev->hw_info->vfe_ops.axi_ops.
 						update_ping_pong_addr(
 						dual_vfe_res->vfe_base[vfe_id],
@@ -2198,27 +2029,7 @@ static int msm_isp_process_done_buf(struct vfe_device *vfe_dev,
 			 * we can cfg ping pong and we can continue
 			 * streaming
 			 */
-<<<<<<< HEAD
-			rc = vfe_dev->buf_mgr->ops->put_buf(
-				vfe_dev->buf_mgr,
-				buf->bufq_handle, buf->buf_idx);
-			if (!rc) {
-				ISP_DBG("%s:%d vfe_id %d Buffer dropped %d\n",
-					__func__, __LINE__, vfe_dev->pdev->id,
-					frame_id);
-				/* Update the framedrop count and flag only for
-					controllable_output */
-				num_bufq = buf->bufq_handle & 0xFF;
-				if (num_bufq < BUF_MGR_NUM_BUF_Q) {
-					vfe_dev->error_info.
-						stream_framedrop_count[num_bufq]++;
-				}
-				vfe_dev->error_info.framedrop_flag = 1;
-				return;
-			}
-=======
 			return rc;
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 		}
 	}
 
@@ -2290,11 +2101,7 @@ int msm_isp_drop_frame(struct vfe_device *vfe_dev,
 	uint32_t pingpong_bit;
 
 	if (!vfe_dev || !stream_info || !ts || !sof_info) {
-<<<<<<< HEAD
-		pr_err("%s %d  vfe_dev %pK stream_info %pK ts %pK op_info %pK\n",
-=======
 		pr_err("%s %d vfe_dev %pK stream_info %pK ts %pK op_info %pK\n",
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 			 __func__, __LINE__, vfe_dev, stream_info, ts,
 			sof_info);
 		return -EINVAL;
@@ -2636,14 +2443,6 @@ int msm_isp_axi_reset(struct vfe_device *vfe_dev,
 			if (!bufq_handle)
 				continue;
 
-<<<<<<< HEAD
-			bufq = vfe_dev->buf_mgr->ops->get_bufq(vfe_dev->buf_mgr,
-				bufq_handle);
-			if (!bufq) {
-				pr_err("%s: bufq null %pK by handle %x\n",
-					__func__, bufq, bufq_handle);
-				continue;
-=======
 			/* set ping pong address to scratch before flush */
 			spin_lock_irqsave(&stream_info->lock, flags);
 			msm_isp_cfg_stream_scratch(vfe_dev, stream_info,
@@ -2659,7 +2458,6 @@ int msm_isp_axi_reset(struct vfe_device *vfe_dev,
 				msm_isp_halt_send_error(vfe_dev,
 					ISP_EVENT_BUF_FATAL_ERROR);
 				return rc;
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 			}
 
 			axi_data->src_info[SRC_TO_INTF(stream_info->
@@ -2901,39 +2699,6 @@ static int msm_isp_update_dual_HW_ms_info_at_stop(
 	return rc;
 }
 
-<<<<<<< HEAD
-static void msm_isp_update_dual_HW_axi(struct vfe_device *vfe_dev,
-			struct msm_vfe_axi_stream *stream_info)
-{
-	int vfe_id;
-	uint32_t stream_idx = HANDLE_TO_IDX(stream_info->stream_handle);
-	struct dual_vfe_resource *dual_vfe_res = NULL;
-	enum msm_vfe_axi_state state;
-
-	if (stream_idx >= VFE_AXI_SRC_MAX) {
-		pr_err("%s: Invalid stream idx %d\n", __func__, stream_idx);
-		return;
-	}
-
-	switch (stream_info->state) {
-	case STARTING:
-		state = STARTED;
-		break;
-	case STOPPING:
-		state = STOPPED;
-		break;
-	case RESUME_PENDING:
-		state = RESUMING;
-		break;
-	default:
-		pr_err("%s: Invalid state stream id 0x%X state %d\n",
-			__func__, stream_info->stream_id, stream_info->state);
-		return;
-	}
-
-	if (vfe_dev->is_split) {
-		dual_vfe_res = vfe_dev->common_data->dual_vfe_res;
-=======
 static int msm_isp_update_dual_HW_axi(struct vfe_device *vfe_dev,
 			struct msm_vfe_axi_stream *stream_info)
 {
@@ -2949,91 +2714,11 @@ static int msm_isp_update_dual_HW_axi(struct vfe_device *vfe_dev,
 
 	dual_vfe_res = vfe_dev->common_data->dual_vfe_res;
 	if (vfe_dev->is_split) {
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 		if (!dual_vfe_res->vfe_dev[ISP_VFE0] ||
 			!dual_vfe_res->vfe_dev[ISP_VFE1] ||
 			!dual_vfe_res->axi_data[ISP_VFE0] ||
 			!dual_vfe_res->axi_data[ISP_VFE1]) {
 			pr_err("%s: Error in dual vfe resource\n", __func__);
-<<<<<<< HEAD
-			return;
-		} else if ((stream_info->state == STARTING &&
-			(dual_vfe_res->axi_data[!vfe_dev->pdev->id]->
-			stream_info[stream_idx].state == STARTING)) ||
-			(stream_info->state == STOPPING &&
-			(dual_vfe_res->axi_data[!vfe_dev->pdev->id]->
-			stream_info[stream_idx].state == STOPPING)) ||
-			(stream_info->state == RESUME_PENDING &&
-			(dual_vfe_res->axi_data[!vfe_dev->pdev->id]->
-			stream_info[stream_idx].state == RESUME_PENDING))) {
-			for (vfe_id = 0; vfe_id < MAX_VFE; vfe_id++) {
-				msm_isp_axi_stream_enable_cfg(
-					dual_vfe_res->vfe_dev[vfe_id],
-					&dual_vfe_res->axi_data[vfe_id]->
-					stream_info[stream_idx], 1);
-				dual_vfe_res->axi_data[vfe_id]->
-				stream_info[stream_idx].state = state;
-
-			}
-		}
-	} else {
-		msm_isp_axi_stream_enable_cfg(
-			vfe_dev, stream_info, 0);
-		stream_info->state = state;
-	}
-}
-
-static void  msm_isp_update_dual_HW_stream_state(struct vfe_device *vfe_dev,
-		struct msm_vfe_axi_stream *stream_info)
-{
-	int vfe_id;
-	uint32_t stream_idx = HANDLE_TO_IDX(stream_info->stream_handle);
-	struct dual_vfe_resource *dual_vfe_res = NULL;
-	enum msm_vfe_axi_state state;
-
-	if (stream_idx >= VFE_AXI_SRC_MAX) {
-		pr_err("%s: Invalid stream idx %d\n", __func__, stream_idx);
-		return;
-	}
-
-	switch (stream_info->state) {
-	case STARTED:
-		state = ACTIVE;
-		break;
-	case STOPPED:
-		state = INACTIVE;
-		break;
-	case RESUMING:
-		state = ACTIVE;
-		break;
-	default:
-		pr_err("%s: Invalid state stream id 0x%X state %d\n",
-			__func__, stream_info->stream_id, stream_info->state);
-		return;
-	}
-
-	if (vfe_dev->is_split) {
-		dual_vfe_res = vfe_dev->common_data->dual_vfe_res;
-		if (!dual_vfe_res->vfe_dev[ISP_VFE0] ||
-			!dual_vfe_res->vfe_dev[ISP_VFE1] ||
-			!dual_vfe_res->axi_data[ISP_VFE0] ||
-			!dual_vfe_res->axi_data[ISP_VFE1]) {
-			pr_err("%s: Error in dual vfe resource\n", __func__);
-		} else {
-			for (vfe_id = 0; vfe_id < MAX_VFE; vfe_id++) {
-				dual_vfe_res->axi_data[vfe_id]->
-				stream_info[stream_idx].state = state;
-				dual_vfe_res->axi_data[vfe_id]->
-				stream_info[stream_idx].runtime_output_format =
-				stream_info->output_format;
-			}
-		}
-	} else {
-		stream_info->state = state;
-		stream_info->runtime_output_format =
-			stream_info->output_format;
-	}
-=======
 			rc = -EINVAL;
 		} else {
 			if (stream_info->state == RESUME_PENDING &&
@@ -3079,7 +2764,6 @@ static void  msm_isp_update_dual_HW_stream_state(struct vfe_device *vfe_dev,
 		}
 	}
 	return rc;
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 }
 
 static int msm_isp_start_axi_stream(struct vfe_device *vfe_dev,
@@ -3504,20 +3188,9 @@ static int msm_isp_return_empty_buffer(struct vfe_device *vfe_dev,
 
 
 	rc = vfe_dev->buf_mgr->ops->get_buf(vfe_dev->buf_mgr,
-<<<<<<< HEAD
-		vfe_dev->pdev->id, bufq_handle, &buf, &buf_cnt, 0);
-	if (rc == -EFAULT) {
-		msm_isp_halt_send_error(vfe_dev, ISP_EVENT_BUF_FATAL_ERROR);
-		return rc;
-	}
-	if (rc < 0) {
-		vfe_dev->error_info.
-			stream_framedrop_count[bufq_handle & 0xFF]++;
-=======
 		vfe_dev->pdev->id, bufq_handle, &buf);
 	if (rc == -EFAULT) {
 		msm_isp_halt_send_error(vfe_dev, ISP_EVENT_BUF_FATAL_ERROR);
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 		return rc;
 	}
 
@@ -4285,52 +3958,6 @@ void msm_isp_process_axi_irq(struct vfe_device *vfe_dev,
 			msm_isp_process_axi_irq_stream(vfe_dev, stream_info,
 						pingpong_status, ts);
 
-<<<<<<< HEAD
-			if (stream_info->state == INACTIVE) {
-				pr_err_ratelimited("%s: Warning! Stream already inactive. Drop irq handling\n",
-					__func__);
-				continue;
-			}
-			spin_lock_irqsave(
-				&vfe_dev->common_data->common_dev_axi_lock,
-				axi_flags);
-			spin_lock_irqsave(&stream_info->lock, flags);
-			stream_info->frame_id++;
-
-			if (stream_info->stream_type == BURST_STREAM) {
-				ISP_DBG("%s: burst_frame_count: %d\n",
-					__func__,
-					stream_info->runtime_num_burst_capture);
-				stream_info->runtime_num_burst_capture--;
-			}
-
-			msm_isp_get_done_buf(vfe_dev, stream_info,
-				pingpong_status, &done_buf);
-			if (stream_info->stream_type == CONTINUOUS_STREAM ||
-				stream_info->runtime_num_burst_capture > 1) {
-				valid_address = 1;
-			} else
-				valid_address = 0;
-
-			rc = msm_isp_cfg_ping_pong_address(vfe_dev,
-				stream_info, pingpong_status,
-				valid_address, 1, 0);
-
-			spin_unlock_irqrestore(&stream_info->lock, flags);
-			spin_unlock_irqrestore(
-				&vfe_dev->common_data->common_dev_axi_lock,
-				axi_flags);
-
-			if (rc == -EFAULT) {
-				msm_isp_halt_send_error(vfe_dev,
-					ISP_EVENT_BUF_FATAL_ERROR);
-				return;
-			}
-			if (done_buf && !rc)
-				msm_isp_process_done_buf(vfe_dev, stream_info,
-					done_buf, ts);
-=======
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 		}
 	}
 
@@ -4361,11 +3988,7 @@ void msm_isp_axi_disable_all_wm(struct vfe_device *vfe_dev)
 	int i, j;
 
 	if (!vfe_dev || !axi_data) {
-<<<<<<< HEAD
-		pr_err("%s: error %pK %pK\n", __func__, vfe_dev, axi_data);
-=======
 		pr_err("%s: error  %pK %pK\n", __func__, vfe_dev, axi_data);
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 		return;
 	}
 

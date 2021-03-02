@@ -1,10 +1,6 @@
 /* Qualcomm Crypto Engine driver.
  *
-<<<<<<< HEAD
- * Copyright (c) 2010-2016, The Linux Foundation. All rights reserved.
-=======
  * Copyright (c) 2010-2014,2016,2020 The Linux Foundation. All rights reserved.
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and

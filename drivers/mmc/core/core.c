@@ -2537,8 +2537,6 @@ int mmc_resume_bus(struct mmc_host *host)
 	mmc_detect_change(host, 0);
 	pr_debug("%s: Deferred resume completed\n", mmc_hostname(host));
 	mmc_release_host(host);
-
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 	return 0;
 }
 
@@ -4282,8 +4280,6 @@ int mmc_suspend_host(struct mmc_host *host)
 	if (host->bus_ops && !host->bus_dead) {
 		if (host->ops->notify_pm_status)
 			host->ops->notify_pm_status(host, DEV_SUSPENDING);
-<<<<<<< HEAD
-=======
 		/*
 		 * Disable clock scaling before suspend and enable it after
 		 * resume so as to avoid clock scaling decisions kicking in
@@ -4292,7 +4288,6 @@ int mmc_suspend_host(struct mmc_host *host)
 		if (mmc_can_scale_clk(host))
 			mmc_disable_clk_scaling(host);
 
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 		/*
 		 * A long response time is not acceptable for device drivers
 		 * when doing suspend. Prevent mmc_claim_host in the suspend

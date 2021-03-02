@@ -142,13 +142,6 @@ typedef enum {
 
 struct sdcardfs_sb_info;
 struct sdcardfs_mount_options;
-<<<<<<< HEAD
-
-/* Do not directly use this function. Use OVERRIDE_CRED() instead. */
-const struct cred * override_fsids(struct sdcardfs_sb_info* sbi);
-/* Do not directly use this function, use REVERT_CRED() instead. */
-void revert_fsids(const struct cred * old_cred);
-=======
 struct sdcardfs_inode_info;
 struct sdcardfs_inode_data;
 
@@ -157,7 +150,6 @@ const struct cred *override_fsids(struct sdcardfs_sb_info *sbi,
 			struct sdcardfs_inode_data *data);
 /* Do not directly use this function, use REVERT_CRED() instead. */
 void revert_fsids(const struct cred *old_cred);
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 
 /* operations vectors defined in specific files */
 extern const struct file_operations sdcardfs_main_fops;
@@ -369,11 +361,6 @@ static inline void sdcardfs_put_reset_##pname(const struct dentry *dent) \
 SDCARDFS_DENT_FUNC(lower_path)
 SDCARDFS_DENT_FUNC(orig_path)
 
-<<<<<<< HEAD
-static inline int get_gid(struct sdcardfs_inode_info *info) {
-	struct sdcardfs_sb_info *sb_info = SDCARDFS_SB(info->vfs_inode.i_sb);
-	if (sb_info->options.gid == AID_SDCARD_RW) {
-=======
 static inline bool sbinfo_has_sdcard_magic(struct sdcardfs_sb_info *sbinfo)
 {
 	return sbinfo && sbinfo->sb
@@ -430,38 +417,10 @@ static inline int get_gid(struct vfsmount *mnt,
 	struct sdcardfs_vfsmount_options *opts = mnt->data;
 
 	if (opts->gid == AID_SDCARD_RW)
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 		/* As an optimization, certain trusted system components only run
 		 * as owner but operate across all users. Since we're now handing
 		 * out the sdcard_rw GID only to trusted apps, we're okay relaxing
 		 * the user boundary enforcement for the default view. The UIDs
-<<<<<<< HEAD
-		 * assigned to app directories are still multiuser aware. */
-		return AID_SDCARD_RW;
-	} else {
-		return multiuser_get_uid(info->userid, sb_info->options.gid);
-	}
-}
-static inline int get_mode(struct sdcardfs_inode_info *info) {
-	int owner_mode;
-	int filtered_mode;
-	struct sdcardfs_sb_info *sb_info = SDCARDFS_SB(info->vfs_inode.i_sb);
-	int visible_mode = 0775 & ~sb_info->options.mask;
-
-	if (info->perm == PERM_PRE_ROOT) {
-		/* Top of multi-user view should always be visible to ensure
-		* secondary users can traverse inside. */
-		visible_mode = 0711;
-	} else if (info->under_android) {
-		/* Block "other" access to Android directories, since only apps
-		* belonging to a specific user should be in there; we still
-		* leave +x open for the default view. */
-		if (sb_info->options.gid == AID_SDCARD_RW) {
-			visible_mode = visible_mode & ~0006;
-		} else {
-			visible_mode = visible_mode & ~0007;
-		}
-=======
 		 * assigned to app directories are still multiuser aware.
 		 */
 		return AID_SDCARD_RW;
@@ -493,7 +452,6 @@ static inline int get_mode(struct vfsmount *mnt,
 			visible_mode = visible_mode & ~0006;
 		else
 			visible_mode = visible_mode & ~0007;
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 	}
 	owner_mode = info->lower_inode->i_mode & 0700;
 	filtered_mode = visible_mode & (owner_mode | (owner_mode >> 3) | (owner_mode >> 6));
@@ -518,11 +476,7 @@ static inline void sdcardfs_get_real_lower(const struct dentry *dent,
 	/* in case of a local obb dentry
 	 * the orig_path should be returned
 	 */
-<<<<<<< HEAD
-	if(has_graft_path(dent))
-=======
 	if (has_graft_path(dent))
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 		sdcardfs_get_orig_path(dent, real_lower);
 	else
 		sdcardfs_get_lower_path(dent, real_lower);
@@ -531,11 +485,7 @@ static inline void sdcardfs_get_real_lower(const struct dentry *dent,
 static inline void sdcardfs_put_real_lower(const struct dentry *dent,
 						struct path *real_lower)
 {
-<<<<<<< HEAD
-	if(has_graft_path(dent))
-=======
 	if (has_graft_path(dent))
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 		sdcardfs_put_orig_path(dent, real_lower);
 	else
 		sdcardfs_put_lower_path(dent, real_lower);
@@ -545,29 +495,14 @@ extern struct mutex sdcardfs_super_list_lock;
 extern struct list_head sdcardfs_super_list;
 
 /* for packagelist.c */
-<<<<<<< HEAD
-extern appid_t get_appid(void *pkgl_id, const char *app_name);
-extern int check_caller_access_to_name(struct inode *parent_node, const char* name);
-extern int open_flags_to_access_mode(int open_flags);
-=======
 extern appid_t get_appid(const char *app_name);
 extern appid_t get_ext_gid(const char *app_name);
 extern appid_t is_excluded(const char *app_name, userid_t userid);
 extern int check_caller_access_to_name(struct inode *parent_node, const struct qstr *name);
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 extern int packagelist_init(void);
 extern void packagelist_exit(void);
 
 /* for derived_perm.c */
-<<<<<<< HEAD
-extern void setup_derived_state(struct inode *inode, perm_t perm,
-			userid_t userid, uid_t uid, bool under_android);
-extern void get_derived_permission(struct dentry *parent, struct dentry *dentry);
-extern void get_derived_permission_new(struct dentry *parent, struct dentry *dentry, struct dentry *newdentry);
-extern void get_derive_permissions_recursive(struct dentry *parent);
-
-extern void update_derived_permission_lock(struct dentry *dentry);
-=======
 #define BY_NAME		(1 << 0)
 #define BY_USERID	(1 << 1)
 struct limit_search {
@@ -585,7 +520,6 @@ extern void fixup_perms_recursive(struct dentry *dentry, struct limit_search *li
 
 extern void update_derived_permission_lock(struct dentry *dentry);
 void fixup_lower_ownership(struct dentry *dentry, const char *name);
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 extern int need_graft_path(struct dentry *dentry);
 extern int is_base_obbpath(struct dentry *dentry);
 extern int is_obbpath_invalid(struct dentry *dentry);
@@ -595,10 +529,7 @@ extern int setup_obb_dentry(struct dentry *dentry, struct path *lower_path);
 static inline struct dentry *lock_parent(struct dentry *dentry)
 {
 	struct dentry *dir = dget_parent(dentry);
-<<<<<<< HEAD
-=======
 
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 	mutex_lock_nested(&dir->d_inode->i_mutex, I_MUTEX_PARENT);
 	return dir;
 }
@@ -624,30 +555,18 @@ static inline int prepare_dir(const char *path_s, uid_t uid, gid_t gid, mode_t m
 		goto out_unlock;
 	}
 
-<<<<<<< HEAD
-	err = vfs_mkdir(parent.dentry->d_inode, dent, mode);
-=======
 	err = vfs_mkdir2(parent.mnt, parent.dentry->d_inode, dent, mode);
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 	if (err) {
 		if (err == -EEXIST)
 			err = 0;
 		goto out_dput;
 	}
 
-<<<<<<< HEAD
-	attrs.ia_uid = make_kuid(&init_user_ns, uid);
-	attrs.ia_gid = make_kgid(&init_user_ns, gid);
-	attrs.ia_valid = ATTR_UID | ATTR_GID;
-	mutex_lock(&dent->d_inode->i_mutex);
-	notify_change(dent, &attrs);
-=======
 	attrs.ia_uid = uid;
 	attrs.ia_gid = gid;
 	attrs.ia_valid = ATTR_UID | ATTR_GID;
 	mutex_lock(&dent->d_inode->i_mutex);
 	notify_change2(parent.mnt, dent, &attrs);
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 	mutex_unlock(&dent->d_inode->i_mutex);
 
 out_dput:
@@ -705,14 +624,6 @@ static inline int check_min_free_space(struct dentry *dentry, size_t size, int d
 		return 1;
 }
 
-<<<<<<< HEAD
-/* Copies attrs and maintains sdcardfs managed attrs */
-static inline void sdcardfs_copy_and_fix_attrs(struct inode *dest, const struct inode *src)
-{
-	dest->i_mode = (src->i_mode  & S_IFMT) | get_mode(SDCARDFS_I(dest));
-	dest->i_uid = make_kuid(&init_user_ns, SDCARDFS_I(dest)->d_uid);
-	dest->i_gid = make_kgid(&init_user_ns, get_gid(SDCARDFS_I(dest)));
-=======
 /*
  * Copies attrs and maintains sdcardfs managed attrs
  * Since our permission check handles all special permissions, set those to be open
@@ -724,7 +635,6 @@ static inline void sdcardfs_copy_and_fix_attrs(struct inode *dest, const struct 
 			S_IROTH | S_IXOTH; /* 0775 */
 	dest->i_uid = SDCARDFS_I(dest)->data->d_uid;
 	dest->i_gid = AID_SDCARD_RW;
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 	dest->i_rdev = src->i_rdev;
 	dest->i_atime = src->i_atime;
 	dest->i_mtime = src->i_mtime;
@@ -733,8 +643,6 @@ static inline void sdcardfs_copy_and_fix_attrs(struct inode *dest, const struct 
 	dest->i_flags = src->i_flags;
 	set_nlink(dest, src->i_nlink);
 }
-<<<<<<< HEAD
-=======
 
 static inline bool str_case_eq(const char *s1, const char *s2)
 {
@@ -753,5 +661,4 @@ static inline bool qstr_case_eq(const struct qstr *q1, const struct qstr *q2)
 
 #define QSTR_LITERAL(string) QSTR_INIT(string, sizeof(string)-1)
 
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 #endif	/* not _SDCARDFS_H_ */

@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
-=======
 /* Copyright (c) 2012-2017, 2020 The Linux Foundation. All rights reserved.
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1274,10 +1270,7 @@ static int msm_compr_free(struct snd_compr_stream *cstream)
 	pdata->is_in_use[soc_prtd->dai_link->be_id] = false;
 	kfree(prtd);
 	runtime->private_data = NULL;
-<<<<<<< HEAD
-=======
 	mutex_unlock(&pdata->lock);
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 
 	return 0;
 }

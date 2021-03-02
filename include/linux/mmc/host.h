@@ -103,11 +103,7 @@ struct mmc_cmdq_host_ops {
 	int (*enable)(struct mmc_host *host);
 	void (*disable)(struct mmc_host *host, bool soft);
 	int (*request)(struct mmc_host *host, struct mmc_request *mrq);
-<<<<<<< HEAD
-	void (*post_req)(struct mmc_host *host, int tag, int err);
-=======
 	void (*post_req)(struct mmc_host *host, int tag, int err, bool is_dcmd);
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 	int (*halt)(struct mmc_host *host, bool halt);
 	void (*reset)(struct mmc_host *host, bool soft);
 	void (*dumpstate)(struct mmc_host *host);
@@ -403,11 +399,7 @@ struct mmc_host {
 				 MMC_CAP2_HS400_1_2V)
 #define MMC_CAP2_NONHOTPLUG	(1 << 25)	/*Don't support hotplug*/
 #define MMC_CAP2_CMD_QUEUE	(1 << 26)	/* support eMMC command queue */
-<<<<<<< HEAD
-#define MMC_CAP2_AWAKE_SUPP	(1 << 27)	/* Use CMD5 awake command */
-=======
 #define MMC_CAP2_BROKEN_PWR_CYCLE (1 << 27)	/* Host Broken power cycle */
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 	mmc_pm_flag_t		pm_caps;	/* supported pm features */
 
 	int			clk_requests;	/* internal reference counter */

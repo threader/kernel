@@ -905,11 +905,7 @@ done:
 out:
 	fl6_sock_release(flowlabel);
 	txopt_put(opt_to_free);
-<<<<<<< HEAD
-	return err<0?err:len;
-=======
 	return err < 0 ? err : len;
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 do_confirm:
 	dst_confirm(dst);
 	if (!(msg->msg_flags & MSG_PROBE) || len)

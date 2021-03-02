@@ -35,92 +35,6 @@ static DEFINE_SPINLOCK(dump_irq_lock);
 static DEFINE_SPINLOCK(dump_tasklet_lock);
 
 #define VFE40_8974V2_VERSION 0x1001001A
-<<<<<<< HEAD
-static struct msm_bus_vectors msm_isp_init_vectors[] = {
-	{
-		.src = MSM_BUS_MASTER_VFE,
-		.dst = MSM_BUS_SLAVE_EBI_CH0,
-		.ab  = 0,
-		.ib  = 0,
-	},
-};
-
-/* During open node request min ab/ib bus bandwidth which
-*  is needed to successfully enable bus clocks
-*/
-static struct msm_bus_vectors msm_isp_ping_vectors[] = {
-	{
-		.src = MSM_BUS_MASTER_VFE,
-		.dst = MSM_BUS_SLAVE_EBI_CH0,
-		.ab  = MSM_ISP_MIN_AB,
-		.ib  = MSM_ISP_MIN_IB,
-	},
-};
-
-static struct msm_bus_vectors msm_isp_pong_vectors[] = {
-	{
-		.src = MSM_BUS_MASTER_VFE,
-		.dst = MSM_BUS_SLAVE_EBI_CH0,
-		.ab  = 0,
-		.ib  = 0,
-	},
-};
-
-static struct msm_bus_paths msm_isp_bus_client_config[] = {
-	{
-		ARRAY_SIZE(msm_isp_init_vectors),
-		msm_isp_init_vectors,
-	},
-	{
-		ARRAY_SIZE(msm_isp_ping_vectors),
-		msm_isp_ping_vectors,
-	},
-	{
-		ARRAY_SIZE(msm_isp_pong_vectors),
-		msm_isp_pong_vectors,
-	},
-};
-
-static struct msm_bus_scale_pdata msm_isp_bus_client_pdata = {
-	msm_isp_bus_client_config,
-	ARRAY_SIZE(msm_isp_bus_client_config),
-	.name = "msm_camera_isp",
-};
-
-
-void msm_camera_io_dump_2(void __iomem *addr, int size)
-{
-	char line_str[128], *p_str;
-	int i;
-	u32 *p = (u32 *) addr;
-	u32 data;
-	pr_err("%s: %pK %d\n", __func__, addr, size);
-	line_str[0] = '\0';
-	p_str = line_str;
-	for (i = 0; i < size/4; i++) {
-		if (i % 4 == 0) {
-#ifdef CONFIG_COMPAT
-			snprintf(p_str, 20, "%016lx: ", (unsigned long) p);
-			p_str += 18;
-#else
-			snprintf(p_str, 12, "%08lx: ", (unsigned long) p);
-			p_str += 10;
-#endif
-		}
-		data = readl_relaxed(p++);
-		snprintf(p_str, 12, "%08x ", data);
-		p_str += 9;
-		if ((i + 1) % 4 == 0) {
-			pr_err("%s\n", line_str);
-			line_str[0] = '\0';
-			p_str = line_str;
-		}
-	}
-	if (line_str[0] != '\0')
-		pr_err("%s\n", line_str);
-}
-=======
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 
 void msm_isp_print_fourcc_error(const char *origin, uint32_t fourcc_format)
 {
@@ -278,12 +192,6 @@ void msm_isp_get_timestamp(struct msm_isp_timestamp *time_stamp,
 	struct vfe_device *vfe_dev)
 {
 	struct timespec ts;
-<<<<<<< HEAD
-	get_monotonic_boottime(&ts);
-	time_stamp->buf_time.tv_sec    = ts.tv_sec;
-	time_stamp->buf_time.tv_usec   = ts.tv_nsec/1000;
-=======
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 	do_gettimeofday(&(time_stamp->event_time));
 	if (vfe_dev->vt_enable) {
 		msm_isp_get_avtimer_ts(time_stamp);
@@ -332,12 +240,6 @@ static inline u32 msm_isp_evt_mask_to_isp_event(u32 evt_mask)
 	case ISP_EVENT_MASK_INDEX_MASK_FE_READ_DONE:
 		evt_id = ISP_EVENT_FE_READ_DONE;
 		break;
-<<<<<<< HEAD
-	case ISP_EVENT_MASK_INDEX_HW_FATAL_ERROR:
-		evt_id = ISP_EVENT_HW_FATAL_ERROR;
-		break;
-=======
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 	case ISP_EVENT_MASK_INDEX_PING_PONG_MISMATCH:
 		evt_id = ISP_EVENT_PING_PONG_MISMATCH;
 		break;
@@ -421,11 +323,7 @@ static inline int msm_isp_process_event_subscription(struct v4l2_fh *fh,
 	}
 
 	for (evt_mask_index = ISP_EVENT_MASK_INDEX_STATS_NOTIFY;
-<<<<<<< HEAD
-		evt_mask_index <= ISP_EVENT_MASK_INDEX_MAX;
-=======
 		evt_mask_index <= ISP_EVENT_MASK_INDEX_BUF_FATAL_ERROR;
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 		evt_mask_index++) {
 		if (evt_mask & (1<<evt_mask_index)) {
 			evt_id = msm_isp_evt_mask_to_isp_event(evt_mask_index);
@@ -453,76 +351,10 @@ int msm_isp_unsubscribe_event(struct v4l2_subdev *sd, struct v4l2_fh *fh,
 	return msm_isp_process_event_subscription(fh, sub, false);
 }
 
-<<<<<<< HEAD
-static int msm_isp_get_max_clk_rate(struct vfe_device *vfe_dev, long *rate)
-{
-	int           clk_idx = 0;
-	unsigned long max_value = ~0;
-	long          round_rate = 0;
-
-	if (!vfe_dev || !rate) {
-		pr_err("%s:%d failed: vfe_dev %pK rate %pK\n", __func__, __LINE__,
-			vfe_dev, rate);
-		return -EINVAL;
-	}
-
-	*rate = 0;
-	if (!vfe_dev->hw_info) {
-		pr_err("%s:%d failed: vfe_dev->hw_info %pK\n", __func__,
-			__LINE__, vfe_dev->hw_info);
-		return -EINVAL;
-	}
-
-	clk_idx = vfe_dev->hw_info->vfe_clk_idx;
-	if (clk_idx >= vfe_dev->num_clk) {
-		pr_err("%s:%d failed: clk_idx %d max array size %d\n",
-			__func__, __LINE__, clk_idx,
-			vfe_dev->num_clk);
-		return -EINVAL;
-	}
-
-	round_rate = clk_round_rate(vfe_dev->vfe_clk[clk_idx], max_value);
-	if (round_rate < 0) {
-		pr_err("%s: Invalid vfe clock rate\n", __func__);
-		return -EINVAL;
-	}
-
-	*rate = round_rate;
-	return 0;
-}
-
-static int msm_isp_get_clk_rates(struct vfe_device *vfe_dev,
-	struct msm_isp_clk_rates *rates)
-{
-	struct device_node *of_node;
-	int32_t  rc = 0;
-	uint32_t svs = 0, nominal = 0, turbo = 0;
-	if (!vfe_dev || !rates) {
-		pr_err("%s:%d failed: vfe_dev %pK rates %pK\n", __func__,
-			__LINE__, vfe_dev, rates);
-		return -EINVAL;
-	}
-
-	if (!vfe_dev->pdev) {
-		pr_err("%s:%d failed: vfe_dev->pdev %pK\n", __func__,
-			__LINE__, vfe_dev->pdev);
-		return -EINVAL;
-	}
-
-	of_node = vfe_dev->pdev->dev.of_node;
-
-	if (!of_node) {
-		pr_err("%s %d failed: of_node = %pK\n", __func__,
-		 __LINE__, of_node);
-		return -EINVAL;
-	}
-
-=======
 static int msm_isp_start_fetch_engine(struct vfe_device *vfe_dev,
 	void *arg)
 {
 	struct msm_vfe_fetch_eng_start *fe_cfg = arg;
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 	/*
 	 * For Offline VFE, HAL expects same frame id
 	 * for offline output which it requested in do_reprocess.
@@ -678,31 +510,6 @@ static int msm_isp_cfg_rdi(struct vfe_device *vfe_dev,
 	return rc;
 }
 
-<<<<<<< HEAD
-int msm_isp_cfg_set_stats_ab(struct vfe_device *vfe_dev, void *arg)
-{
-	int rc = 0;
-	struct msm_isp_set_stats_ab *stats_ab = NULL;
-
-	if (!vfe_dev || !arg) {
-		pr_err("%s: Error! Invalid input vfe_dev %pK arg %pK\n",
-			__func__, vfe_dev, arg);
-	return -EINVAL;
-	}
-	stats_ab = arg;
-	if ((stats_ab->stats_ab  == (uint64_t) -1) ||
-		(stats_ab->stats_ab  == 0)) {
-		pr_err("%s: STATS AB value is 0/-1, set to MSM_ISP_MIN_AB\n",
-			__func__);
-		stats_ab->stats_ab = MSM_ISP_MIN_AB;
-	}
-	vfe_dev->axi_data.src_info[VFE_PIX_0].stats_ab = stats_ab->stats_ab;
-	vfe_dev->axi_data.src_info[VFE_PIX_0].stats_ib = stats_ab->stats_ab;
-	return rc;
-}
-
-=======
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 int msm_isp_cfg_input(struct vfe_device *vfe_dev, void *arg)
 {
 	int rc = 0;
@@ -1936,12 +1743,7 @@ static int msm_isp_process_iommu_page_fault(struct vfe_device *vfe_dev)
 	pr_err("%s:%d] VFE%d Handle Page fault! vfe_dev %pK\n", __func__,
 		__LINE__,  vfe_dev->pdev->id, vfe_dev);
 
-<<<<<<< HEAD
-	pr_err_ratelimited("%s:%d] vfe_dev %pK id %d\n", __func__,
-		__LINE__, vfe_dev, vfe_dev->pdev->id);
-=======
 	msm_isp_halt_send_error(vfe_dev, ISP_EVENT_IOMMU_P_FAULT);
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 
 	if (vfe_dev->buf_mgr->pagefault_debug_disable == 0) {
 		vfe_dev->buf_mgr->pagefault_debug_disable = 1;
@@ -1983,14 +1785,8 @@ void msm_isp_process_overflow_irq(
 	uint32_t *irq_status0, uint32_t *irq_status1,
 	uint32_t force_overflow)
 {
-<<<<<<< HEAD
-	uint32_t overflow_mask, vfe_id;
-	struct dual_vfe_resource *dual_vfe_res = NULL;
-	enum msm_vfe_input_src input_src = 0;
-=======
 	uint32_t overflow_mask;
 
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 	/* if there are no active streams - do not start recovery */
 	if (!vfe_dev->axi_data.num_active_stream)
 		return;
@@ -2024,25 +1820,8 @@ void msm_isp_process_overflow_irq(
 			return;
 		}
 
-<<<<<<< HEAD
-		overflow_mask &= 0xFE00;
-		overflow_mask >>= 9;
-
-		if (overflow_mask & vfe_dev->axi_data.rdi_wm_mask)
-			input_src = VFE_RAW_0;
-		else if ((overflow_mask << 8) & vfe_dev->axi_data.rdi_wm_mask)
-			input_src = VFE_RAW_1;
-		else if ((overflow_mask << 16) & vfe_dev->axi_data.rdi_wm_mask)
-			input_src = VFE_RAW_2;
-		else
-			input_src = VFE_PIX_0;
-
-		ISP_DBG("%s: intf %d Bus overflow detected: 0x%x, start recovery!\n",
-				__func__, input_src, overflow_mask);
-=======
 		ISP_DBG("%s: VFE%d Bus overflow detected: start recovery!\n",
 			__func__, vfe_dev->pdev->id);
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 
 		trace_msm_cam_isp_overflow(vfe_dev, *irq_status0, *irq_status1);
 
@@ -2085,14 +1864,6 @@ void msm_isp_process_overflow_irq(
 		*irq_status0 = 0;
 		*irq_status1 = 0;
 
-<<<<<<< HEAD
-		memset(&error_event, 0, sizeof(error_event));
-		error_event.frame_id =
-			vfe_dev->axi_data.src_info[input_src].frame_id;
-		error_event.u.error_info.err_type = ISP_ERROR_BUS_OVERFLOW;
-		error_event.u.error_info.stream_id_mask= input_src;
-		msm_isp_send_event(vfe_dev, ISP_EVENT_ERROR, &error_event);
-=======
 		/* send overflow event as needed */
 		if (atomic_read(&vfe_dev->error_info.overflow_state)
 			!= HALT_ENFORCED) {
@@ -2104,7 +1875,6 @@ void msm_isp_process_overflow_irq(
 			msm_isp_send_event(vfe_dev,
 				ISP_EVENT_ERROR, &error_event);
 		}
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 	}
 }
 
@@ -2115,17 +1885,7 @@ void msm_isp_reset_burst_count_and_frame_drop(
 		stream_info->stream_type != BURST_STREAM) {
 		return;
 	}
-<<<<<<< HEAD
-	if (stream_info->num_burst_capture != 0) {
-		framedrop_period = msm_isp_get_framedrop_period(
-		   stream_info->frame_skip_pattern);
-		stream_info->burst_frame_count =
-			stream_info->init_frame_drop +
-			(stream_info->num_burst_capture - 1) *
-			framedrop_period + 1;
-=======
 	if (stream_info->num_burst_capture != 0)
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 		msm_isp_reset_framedrop(vfe_dev, stream_info);
 }
 
@@ -2337,18 +2097,12 @@ static void msm_vfe_iommu_fault_handler(struct iommu_domain *domain,
 
 	if (token) {
 		vfe_dev = (struct vfe_device *)token;
-<<<<<<< HEAD
-		if (!vfe_dev->buf_mgr || !vfe_dev->buf_mgr->ops) {
-			pr_err("%s:%d] buf_mgr %pK\n", __func__,
-				__LINE__, vfe_dev->buf_mgr);
-=======
 		vfe_dev->page_fault_addr = iova;
 		if (!vfe_dev->buf_mgr || !vfe_dev->buf_mgr->ops ||
 			!vfe_dev->axi_data.num_active_stream) {
 			pr_err("%s:%d buf_mgr %pK active strms %d\n", __func__,
 				__LINE__, vfe_dev->buf_mgr,
 				vfe_dev->axi_data.num_active_stream);
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 			goto end;
 		}
 
@@ -2397,15 +2151,6 @@ int msm_isp_open_node(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 		return 0;
 	}
 
-<<<<<<< HEAD
-	if (vfe_dev->vfe_base) {
-		pr_err("%s:%d invalid params cnt %d base %pK\n", __func__,
-			__LINE__, vfe_dev->vfe_open_cnt, vfe_dev->vfe_base);
-		vfe_dev->vfe_base = NULL;
-	}
-
-=======
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 	vfe_dev->reset_pending = 0;
 	vfe_dev->isp_sof_debug = 0;
 	vfe_dev->isp_raw0_debug = 0;
