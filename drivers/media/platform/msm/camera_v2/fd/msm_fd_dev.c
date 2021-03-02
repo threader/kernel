@@ -431,7 +431,6 @@ static int msm_fd_open(struct file *file)
 	ctx->vb2_q.buf_struct_size = sizeof(struct msm_fd_buffer);
 	ctx->vb2_q.type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
 	ctx->vb2_q.io_modes = VB2_USERPTR;
-	ctx->vb2_q.timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_COPY;
 	ctx->vb2_q.timestamp_type = V4L2_BUF_FLAG_TIMESTAMP_COPY;
 	mutex_init(&ctx->lock);
 	ret = vb2_queue_init(&ctx->vb2_q);

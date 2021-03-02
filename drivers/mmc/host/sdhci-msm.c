@@ -3880,14 +3880,11 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 #endif
 
 #if defined(CONFIG_ARCH_SONY_LOIRE) || defined(CONFIG_ARCH_SONY_KITAKAMI)
-	msm_host->mmc->caps2 |= MMC_CAP2_AWAKE_SUPP;
+	msm_host->mmc->caps2 |= MMC_CAP2_BROKEN_PWR_CYCLE;
 #endif
 
 	if (msm_host->pdata->nonremovable)
 		msm_host->mmc->caps |= MMC_CAP_NONREMOVABLE;
-
-	if (msm_host->pdata->broken_pwr_cycle_host)
-		msm_host->mmc->caps2 |= MMC_CAP2_BROKEN_PWR_CYCLE;
 
 	if (msm_host->pdata->nonhotplug)
 		msm_host->mmc->caps2 |= MMC_CAP2_NONHOTPLUG;

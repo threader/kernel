@@ -480,7 +480,7 @@ err:
 static inline void binder_lock(struct binder_context *context, const char *tag)
 {
 	trace_binder_lock(tag);
-	mutex_lock(&context->&binder_main_lock);
+	mutex_lock(&context->binder_main_lock);
 	preempt_disable();
 	trace_binder_locked(tag);
 }
@@ -489,7 +489,7 @@ static inline void binder_unlock(struct binder_context *context,
 				 const char *tag)
 {
 	trace_binder_unlock(tag);
-	mutex_unlock(&context->&binder_main_lock);
+	mutex_unlock(&context->binder_main_lock);
 	preempt_enable();
 }
 
@@ -3868,8 +3868,7 @@ static void binder_deferred_func(struct work_struct *work)
 		if (defer & BINDER_DEFERRED_RELEASE)
 			binder_deferred_release(proc); /* frees proc */
 
-		trace_binder_unlock(context, __func__);
-		mutex_unlock(&binder_main_lock);
+		binder_unlock(context, __func__);
 		preempt_enable_no_resched();
 		if (files)
 			put_files_struct(files);

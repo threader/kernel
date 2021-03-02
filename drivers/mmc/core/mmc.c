@@ -2161,7 +2161,7 @@ static int mmc_resume(struct mmc_host *host)
 
 	mmc_claim_host(host);
 
-	if (host->caps2 & MMC_CAP2_AWAKE_SUPP) {
+	if (host->caps2 & MMC_CAP2_BROKEN_PWR_CYCLE) {
 		err = mmc_card_awake(host);
 		if (err)
 			goto doinit;
