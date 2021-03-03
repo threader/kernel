@@ -277,6 +277,7 @@ static struct fg_mem_data fg_data[FG_DATA_MAX] = {
 	DATA(BATT_ID,         0x594,   1,      1,     -EINVAL),
 	DATA(BATT_ID_INFO,    0x594,   3,      1,     -EINVAL),
 };
+
 enum fg_mem_backup_index {
 	FG_BACKUP_SOC = 0,
 	FG_BACKUP_CYCLE_COUNT,
@@ -2617,7 +2618,6 @@ static int update_sram_data(struct fg_chip *chip, int *resched_ms)
 	read_soc = reg[0] | (reg[1] << 8) | (reg[2] << 16);
 	chip->somc_params.data.soc_full =
 			(read_soc * DECIMAL_CEIL) / (FULL_PERCENT_3B / 100);
-out:
 #endif
 	fg_mem_release(chip);
 
@@ -3277,7 +3277,6 @@ static enum power_supply_property fg_power_props[] = {
 #endif
 	POWER_SUPPLY_PROP_HI_POWER,
 	POWER_SUPPLY_PROP_SOC_REPORTING_READY,
->>>>>>> remotes/caf-LA.BR.1.3.7.c25/LA.BR.1.3.7.c25
 };
 
 static int fg_power_get_property(struct power_supply *psy,
@@ -7788,23 +7787,6 @@ power_supply_unregister:
 #endif
 	power_supply_unregister(&chip->bms_psy);
 cancel_work:
-	cancel_delayed_work_sync(&chip->update_jeita_setting);
-	cancel_delayed_work_sync(&chip->update_sram_data);
-	cancel_delayed_work_sync(&chip->update_temp_work);
-	cancel_delayed_work_sync(&chip->check_empty_work);
-	cancel_delayed_work_sync(&chip->batt_profile_init);
-	alarm_try_to_cancel(&chip->fg_cap_learning_alarm);
-	cancel_work_sync(&chip->set_resume_soc_work);
-	cancel_work_sync(&chip->fg_cap_learning_work);
-	cancel_work_sync(&chip->dump_sram);
-	cancel_work_sync(&chip->status_change_work);
-	cancel_work_sync(&chip->cycle_count_work);
-	cancel_work_sync(&chip->update_esr_work);
-	cancel_work_sync(&chip->rslow_comp_work);
-	cancel_work_sync(&chip->sysfs_restart_work);
-	cancel_work_sync(&chip->gain_comp_work);
-	cancel_work_sync(&chip->init_work);
-	cancel_work_sync(&chip->charge_full_work);
 	fg_cancel_all_works(chip);
 of_init_fail:
 	mutex_destroy(&chip->rslow_comp.lock);

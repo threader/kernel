@@ -98,6 +98,7 @@ static uint8_t stats_pingpong_offset_map[] = {
 #define VFE40_CLK_IDX 1
 #else
 #define VFE40_CLK_IDX 2
+#endif 
 
 static void msm_vfe40_config_irq(struct vfe_device *vfe_dev,
 		uint32_t irq0_mask, uint32_t irq1_mask,

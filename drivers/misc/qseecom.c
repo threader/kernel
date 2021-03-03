@@ -2917,6 +2917,7 @@ static int __qseecom_send_cmd(struct qseecom_dev_handle *data,
 				(void *)table + SGLISTINFO_TABLE_SIZE);
 		cmd_buf = (void *)&send_data_req_64bit;
 		cmd_len = sizeof(struct qseecom_client_send_data_64bit_ireq);
+#endif
 	}
 
 	if (qseecom.whitelist_support == false || data->use_legacy_cmd == true)

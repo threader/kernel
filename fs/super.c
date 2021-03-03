@@ -213,7 +213,6 @@ out:
 err_out:
 	security_sb_free(s);
 	destroy_sb_writers(s);
-out_free_sb:
 	kfree(s);
 	s = NULL;
 	goto out;

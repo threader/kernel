@@ -2040,27 +2040,10 @@ int create_pkt_cmd_session_set_property(
 	}
 	case HAL_PARAM_VENC_VIDEO_SIGNAL_INFO:
 	{
-		u32 color_space, matrix_coeffs, transfer_chars;
 		struct hal_video_signal_info *hal = pdata;
 		struct hfi_video_signal_metadata *signal_info =
 			(struct hfi_video_signal_metadata *)
 			&pkt->rg_property_data[1];
-
-		switch (hal->color_space) {
-		/* See colour_primaries of ISO/IEC 14496 for significance */
-		case HAL_VIDEO_COLOR_SPACE_601:
-			color_space = 5;
-			transfer_chars = 6;
-			matrix_coeffs = 5;
-			break;
-		case HAL_VIDEO_COLOR_SPACE_709:
-			color_space = 1;
-			transfer_chars = 1;
-			matrix_coeffs = 1;
-			break;
-		default:
-			return -ENOTSUPP;
-		}
 
 		signal_info->enable = true;
 		signal_info->video_format = MSM_VIDC_NTSC;
@@ -2073,14 +2056,6 @@ int create_pkt_cmd_session_set_property(
 		pkt->rg_property_data[0] =
 			HFI_PROPERTY_PARAM_VENC_VIDEO_SIGNAL_INFO;
 		pkt->size += sizeof(u32) + sizeof(*signal_info);
-		break;
-	}
-	case HAL_PARAM_VENC_CONSTRAINED_INTRA_PRED:
-	{
-		create_pkt_enable(pkt->rg_property_data,
-			HFI_PROPERTY_PARAM_VENC_CONSTRAINED_INTRA_PRED,
-			((struct hal_enable *)pdata)->enable);
-		pkt->size += sizeof(u32) + sizeof(struct hfi_enable);
 		break;
 	}
 	case HAL_PARAM_VENC_IFRAMESIZE_TYPE:

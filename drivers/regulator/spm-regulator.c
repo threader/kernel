@@ -188,15 +188,17 @@ static int _spm_regulator_set_voltage(struct regulator_dev *rdev)
 
 	if (vreg->uV > vreg->last_set_uV) {
 		/* Wait for voltage stepping to complete. */
-		udelay(DIV_ROUND_UP(vreg->uV - vreg->last_set_uV,
-					vreg->step_rate));
+		slew_delay = DIV_ROUND_UP(vreg->uV - vreg->last_set_uV,
+					vreg->step_rate);
 #if defined(CONFIG_ARCH_SONY_LOIRE)
 		if (vreg->regulator_type == QPNP_TYPE_FTS2p5)
-			udelay(FTS2P5_SETTLING_DELAY_US);
+			slew_delay += FTS2P5_SETTLING_DELAY_US;
+		udelay(slew_delay);
 	} else if (vreg->regulator_type == QPNP_TYPE_FTS2p5) {
-			/* add the ramp-down delay */
-			udelay(DIV_ROUND_UP(vreg->last_set_uV - vreg->uV,
-				vreg->step_rate));
+		/* add the ramp-down delay */
+		slew_delay = DIV_ROUND_UP(vreg->last_set_uV - vreg->uV,
+				vreg->step_rate) + FTS2P5_SETTLING_DELAY_US;
+		udelay(slew_delay);
 #endif
 	}
 

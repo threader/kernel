@@ -58,14 +58,6 @@ static inline struct msm_vfe_axi_stream *msm_isp_get_controllable_stream(
 	return stream_info;
 }
 
-static void msm_isp_update_dual_HW_axi(
-	struct vfe_device *vfe_dev,
-	struct msm_vfe_axi_stream *stream_info);
-
-static void  msm_isp_update_dual_HW_stream_state(
-	struct vfe_device *vfe_dev,
-	struct msm_vfe_axi_stream *stream_info);
-
 int msm_isp_axi_create_stream(struct vfe_device *vfe_dev,
 	struct msm_vfe_axi_shared_data *axi_data,
 	struct msm_vfe_axi_stream_request_cmd *stream_cfg_cmd)
@@ -390,9 +382,6 @@ void msm_isp_axi_reserve_wm(struct vfe_device *vfe_dev,
 			vfe_dev->pdev->id,
 			stream_info->stream_handle, j);
 		stream_info->wm[i] = j;
-		if (stream_info->stream_src > IDEAL_RAW)
-			vfe_dev->axi_data.rdi_wm_mask |=
-				((1 << j) << (8 * (stream_info->stream_src - RDI_INTF_0)));
 	}
 }
 
@@ -404,9 +393,6 @@ void msm_isp_axi_free_wm(struct msm_vfe_axi_shared_data *axi_data,
 	for (i = 0; i < stream_info->num_planes; i++) {
 		axi_data->free_wm[stream_info->wm[i]] = 0;
 		axi_data->num_used_wm--;
-		if (stream_info->stream_src > IDEAL_RAW)
-			axi_data->rdi_wm_mask &=
-				~((1 << stream_info->wm[i]) << (8 * (stream_info->stream_src - RDI_INTF_0)));
 	}
 	if (stream_info->stream_src <= IDEAL_RAW)
 		axi_data->num_pix_stream++;
@@ -1400,8 +1386,6 @@ void msm_isp_axi_stream_update(struct vfe_device *vfe_dev,
 	unsigned long flags;
 	struct msm_vfe_axi_shared_data *axi_data = &vfe_dev->axi_data;
 
-	spin_lock_irqsave(&vfe_dev->common_data->common_dev_axi_lock,
-		flags);
 	for (i = 0; i < VFE_AXI_SRC_MAX; i++) {
 		if (SRC_TO_INTF(axi_data->stream_info[i].stream_src) !=
 			frame_src) {
@@ -1422,16 +1406,14 @@ void msm_isp_axi_stream_update(struct vfe_device *vfe_dev,
 			axi_data->stream_info[i].state =
 				axi_data->stream_info[i].state ==
 				START_PENDING ? STARTING : STOPPING;
-			msm_isp_update_dual_HW_axi(vfe_dev,
-				&axi_data->stream_info[i]);
-		} else if (axi_data->stream_info[i].state == STARTED ||
-			axi_data->stream_info[i].state == STOPPED) {
-			msm_isp_update_dual_HW_stream_state(vfe_dev,
-				&axi_data->stream_info[i]);
+		} else if (axi_data->stream_info[i].state == STARTING ||
+			axi_data->stream_info[i].state == STOPPING) {
+			axi_data->stream_info[i].state =
+				axi_data->stream_info[i].state == STARTING ?
+				ACTIVE : INACTIVE;
 		}
 	}
-	spin_unlock_irqrestore(&vfe_dev->common_data->common_dev_axi_lock,
-		flags);
+
 	spin_lock_irqsave(&vfe_dev->shared_data_lock, flags);
 	if (vfe_dev->axi_data.stream_update[frame_src]) {
 		vfe_dev->axi_data.stream_update[frame_src]--;

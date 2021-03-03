@@ -747,39 +747,6 @@ struct mdss_panel_timing {
 	struct mdss_mdp_pp_tear_check te;
 };
 
-struct mdss_panel_timing {
-	struct list_head list;
-	const char *name;
-
-	u32 xres;
-	u32 yres;
-
-	u32 h_back_porch;
-	u32 h_front_porch;
-	u32 h_pulse_width;
-	u32 hsync_skew;
-	u32 v_back_porch;
-	u32 v_front_porch;
-	u32 v_pulse_width;
-
-	u32 border_top;
-	u32 border_bottom;
-	u32 border_left;
-	u32 border_right;
-
-	u32 lm_widths[2];
-
-	u32 clk_rate;
-	char frame_rate;
-
-	u8 dsc_enc_total;
-	struct dsc_desc dsc;
-	struct fbc_panel_info fbc;
-	u32 compression_mode;
-
-	struct mdss_mdp_pp_tear_check te;
-};
-
 struct mdss_panel_data {
 	struct mdss_panel_info panel_info;
 	void (*set_backlight) (struct mdss_panel_data *pdata, u32 bl_level);
@@ -991,6 +958,34 @@ static inline bool mdss_panel_is_power_on_lp(int panel_power_state)
 static inline bool mdss_panel_is_power_on_ulp(int panel_power_state)
 {
 	return panel_power_state == MDSS_PANEL_POWER_LP2;
+}
+
+/**
+ * mdss_panel_calc_frame_rate() - calculate panel frame rate based on panel timing
+ *				information.
+ * @panel_info:	Pointer to panel info containing all panel information
+ */
+static inline u8 mdss_panel_calc_frame_rate(struct mdss_panel_info *pinfo)
+{
+		u32 pixel_total = 0;
+		u8 frame_rate = 0;
+
+		pixel_total = (pinfo->lcdc.h_back_porch +
+			  pinfo->lcdc.h_front_porch +
+			  pinfo->lcdc.h_pulse_width +
+			  pinfo->xres) *
+			 (pinfo->lcdc.v_back_porch +
+			  pinfo->lcdc.v_front_porch +
+			  pinfo->lcdc.v_pulse_width +
+			  pinfo->yres);
+
+		if (pinfo->clk_rate && pixel_total)
+			frame_rate = DIV_ROUND_CLOSEST(pinfo->clk_rate,
+								pixel_total);
+		else
+			frame_rate = DEFAULT_FRAME_RATE;
+
+		return frame_rate;
 }
 
 /**

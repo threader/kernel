@@ -2136,28 +2136,6 @@ int mdss_dsi_register_recovery_handler(struct mdss_dsi_ctrl_pdata *ctrl,
 	return 0;
 }
 
-int mdss_dsi_clk_refresh(struct mdss_panel_data *pdata)
-{
-	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
-	int rc = 0;
-
-	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
-							panel_data);
-	rc = mdss_dsi_clk_div_config(&pdata->panel_info,
-			pdata->panel_info.mipi.frame_rate);
-	if (rc) {
-		pr_err("%s: unable to initialize the clk dividers\n",
-								__func__);
-		return rc;
-	}
-	ctrl_pdata->refresh_clk_rate = false;
-	ctrl_pdata->pclk_rate = pdata->panel_info.mipi.dsi_pclk_rate;
-	ctrl_pdata->byte_clk_rate = pdata->panel_info.clk_rate / 8;
-	pr_debug("%s ctrl_pdata->byte_clk_rate=%d ctrl_pdata->pclk_rate=%d\n",
-		__func__, ctrl_pdata->byte_clk_rate, ctrl_pdata->pclk_rate);
-	return rc;
-}
-
 int mdss_dsi_register_mdp_callback(struct mdss_dsi_ctrl_pdata *ctrl,
 	struct mdss_intf_recovery *mdp_callback)
 {
@@ -2269,6 +2247,7 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 				ctrl_pdata->update_phy_timing);
 
 		mdss_dsi_get_hw_revision(ctrl_pdata);
+		mdss_dsi_get_phy_revision(ctrl_pdata);
 		rc = mdss_dsi_on(pdata);
 		mdss_dsi_op_mode_config(pdata->panel_info.mipi.mode,
 							pdata);
@@ -2375,9 +2354,6 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 				queue_delayed_work(ctrl_pdata->workq,
 					&ctrl_pdata->dba_work, HZ);
 		}
-		break;
-	case MDSS_EVENT_PANEL_TIMING_SWITCH:
-		rc = mdss_dsi_panel_timing_switch(ctrl_pdata, arg);
 		break;
 #ifdef CONFIG_SOMC_PANEL_LEGACY
 	case MDSS_EVENT_DISP_ON:
@@ -3739,6 +3715,7 @@ int dsi_panel_device_register(struct platform_device *ctrl_pdev,
 		mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 1);
 		ctrl_pdata->is_phyreg_enabled = 1;
 		mdss_dsi_get_hw_revision(ctrl_pdata);
+		mdss_dsi_get_phy_revision(ctrl_pdata);
 		if ((ctrl_pdata->shared_data->hw_rev >= MDSS_DSI_HW_REV_103)
 			&& (pinfo->type == MIPI_CMD_PANEL)) {
 			data = MIPI_INP(ctrl_pdata->ctrl_base + 0x1b8);
