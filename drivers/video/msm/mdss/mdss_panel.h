@@ -466,12 +466,19 @@ struct lvds_panel_info {
 };
 
 enum {
+	DSC_PATH_1P1D,
+	DSC_PATH_MERGE_1P1D,
+	DSC_PATH_SPLIT_1P2D
+};
+
+enum {
 	COMPRESSION_NONE,
 	COMPRESSION_DSC,
 	COMPRESSION_FBC
 };
 
 struct dsc_desc {
+	int data_path_model;		/* multiplex + split_panel */
 	int ich_reset_value;
 	int ich_reset_override;
 	int initial_lines;

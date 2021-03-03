@@ -279,7 +279,7 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 {
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 	struct mdss_panel_info *pinfo = NULL;
-	int i, rc = 0;
+	int i, rc = 0, mode_sel = 0;
 
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
@@ -318,9 +318,22 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 			return rc;
 		}
 		if (!pinfo->cont_splash_enabled) {
-			if (gpio_is_valid(ctrl_pdata->disp_en_gpio))
-				gpio_set_value((ctrl_pdata->disp_en_gpio), 1);
+			if (gpio_is_valid(ctrl_pdata->disp_en_gpio)) {
+				rc = gpio_direction_output(
+					ctrl_pdata->disp_en_gpio, 1);
+				if (rc) {
+					pr_err("%s: unable to set dir for disp_en gpio\n",
+						__func__);
+					goto gpio_err;
+				}
+			}
 
+			rc = gpio_direction_output(ctrl_pdata->rst_gpio, 1);
+			if (rc) {
+				pr_err("%s: unable to set dir for rst gpio\n",
+					__func__);
+				goto gpio_err;
+			}
 			for (i = 0; i < pdata->panel_info.rst_seq_len; ++i) {
 				gpio_set_value((ctrl_pdata->rst_gpio),
 					pdata->panel_info.rst_seq[i]);
@@ -328,24 +341,31 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 					usleep(pinfo->rst_seq[i] * 1000);
 			}
 
-			if (gpio_is_valid(ctrl_pdata->bklt_en_gpio))
-				gpio_set_value((ctrl_pdata->bklt_en_gpio), 1);
-		}
-
-		if (gpio_is_valid(ctrl_pdata->mode_gpio)) {
-			if (pinfo->mode_gpio_state == MODE_GPIO_HIGH)
-				gpio_set_value((ctrl_pdata->mode_gpio), 1);
-			else if (pinfo->mode_gpio_state == MODE_GPIO_LOW)
-				gpio_set_value((ctrl_pdata->mode_gpio), 0);
+			if (gpio_is_valid(ctrl_pdata->bklt_en_gpio)) {
+				rc = gpio_direction_output(
+					ctrl_pdata->bklt_en_gpio, 1);
+				if (rc) {
+					pr_err("%s: unable to set dir for bklt gpio\n",
+						__func__);
+					goto gpio_err;
+				}
+			}
 		}
 
 		if (gpio_is_valid(ctrl_pdata->lcd_mode_sel_gpio)) {
-			if (pinfo->mode_sel_state == MODE_SEL_DSC_SINGLE)
-				gpio_set_value(
-					ctrl_pdata->lcd_mode_sel_gpio, 1);
-			else if (pinfo->mode_sel_state == MODE_SEL_SPLIT)
-				gpio_set_value(
-					ctrl_pdata->lcd_mode_sel_gpio, 0);
+			if ((pinfo->mode_sel_state == MODE_SEL_DSC_SINGLE) ||
+				(pinfo->mode_sel_state == MODE_GPIO_HIGH))
+				mode_sel = 1;
+			else if ((pinfo->mode_sel_state == MODE_SEL_SPLIT) ||
+				(pinfo->mode_sel_state == MODE_GPIO_LOW))
+				mode_sel = 0;
+			rc = gpio_direction_output(
+				ctrl_pdata->lcd_mode_sel_gpio, mode_sel);
+			if (rc) {
+				pr_err("%s: unable to set dir for mode_sel gpio\n",
+					__func__);
+				goto gpio_err;
+			}
 		}
 
 		if (ctrl_pdata->ctrl_state & CTRL_STATE_PANEL_INIT) {
@@ -365,11 +385,18 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 		}
 		gpio_set_value((ctrl_pdata->rst_gpio), 0);
 		gpio_free(ctrl_pdata->rst_gpio);
-		if (gpio_is_valid(ctrl_pdata->mode_gpio))
-			gpio_free(ctrl_pdata->mode_gpio);
 		if (gpio_is_valid(ctrl_pdata->lcd_mode_sel_gpio))
 			gpio_free(ctrl_pdata->lcd_mode_sel_gpio);
 	}
+	return 0;
+gpio_err:
+	if (gpio_is_valid(ctrl_pdata->lcd_mode_sel_gpio))
+		gpio_free(ctrl_pdata->lcd_mode_sel_gpio);
+	if (gpio_is_valid(ctrl_pdata->bklt_en_gpio))
+		gpio_free(ctrl_pdata->bklt_en_gpio);
+	gpio_free(ctrl_pdata->rst_gpio);
+	if (gpio_is_valid(ctrl_pdata->disp_en_gpio))
+		gpio_free(ctrl_pdata->disp_en_gpio);
 	return rc;
 }
 
@@ -607,8 +634,8 @@ static void mdss_dsi_panel_switch_mode(struct mdss_panel_data *pdata,
 		flags |= CMD_REQ_DMA_TPG;
 	} else {
 		pr_warn("%s: Invalid mode switch attempted\n", __func__);
-		return;
-	}
+	return;
+}
 
 	mdss_dsi_panel_cmds_send(ctrl_pdata, pcmds, flags);
 }
@@ -2045,17 +2072,19 @@ static int  mdss_dsi_panel_config_res_properties(struct device_node *np,
 		"qcom,mdss-dsi-timing-switch-command",
 		"qcom,mdss-dsi-timing-switch-command-state");
 
-	mdss_dsi_parse_fbc_params(np, &pt->timing.fbc);
-	if (np->name) {
-		pt->timing.name = kstrdup(np->name, GFP_KERNEL);
-		pr_info("%s: found new timing \"%s\" (%p)\n", __func__,
-				np->name, &pt->timing);
+	rc = mdss_dsi_parse_compression_params(np, pt,
+			panel_data->panel_info.is_split_display);
+	if (rc) {
+		pr_err("%s: parsing compression params failed. rc:%d\n",
+			__func__, rc);
+		return rc;
 	}
 
-	return 0;
+	mdss_panel_parse_te_params(np, &pt->timing);
+	return rc;
 }
 
-static int __mdss_panel_parse_display_timings(struct device_node *np,
+static int mdss_panel_parse_display_timings(struct device_node *np,
 		struct mdss_panel_data *panel_data)
 {
 	struct mdss_dsi_ctrl_pdata *ctrl;
@@ -2072,16 +2101,19 @@ static int __mdss_panel_parse_display_timings(struct device_node *np,
 	timings_np = of_get_child_by_name(np, "qcom,mdss-dsi-display-timings");
 	if (!timings_np) {
 		struct dsi_panel_timing pt;
+		memset(&pt, 0, sizeof(struct dsi_panel_timing));
 
 		/*
 		 * display timings node is not available, fallback to reading
 		 * timings directly from root node instead
 		 */
 		pr_debug("reading display-timings from panel node\n");
-		rc = __mdss_dsi_timing_from_dt(np, &pt);
-		if (!rc)
+		rc = mdss_dsi_panel_timing_from_dt(np, &pt, panel_data);
+		if (!rc) {
+			mdss_dsi_panel_config_res_properties(np, &pt,
+					panel_data);
 			rc = mdss_dsi_panel_timing_switch(ctrl, &pt.timing);
-
+		}
 		return rc;
 	}
 
@@ -2092,7 +2124,7 @@ static int __mdss_panel_parse_display_timings(struct device_node *np,
 		goto exit;
 	}
 
-	modedb = kzalloc(num_timings * sizeof(*modedb), GFP_KERNEL);
+	modedb = kcalloc(num_timings, sizeof(*modedb), GFP_KERNEL);
 	if (!modedb) {
 		pr_err("unable to allocate modedb\n");
 		rc = -ENOMEM;
@@ -2100,11 +2132,16 @@ static int __mdss_panel_parse_display_timings(struct device_node *np,
 	}
 
 	for_each_child_of_node(timings_np, entry) {
-		rc = __mdss_dsi_timing_from_dt(entry, modedb + i);
+		rc = mdss_dsi_panel_timing_from_dt(entry, (modedb + i),
+				panel_data);
 		if (rc) {
 			kfree(modedb);
 			goto exit;
 		}
+
+		mdss_dsi_panel_config_res_properties(entry, (modedb + i),
+				panel_data);
+
 		/* if default is set, use it otherwise use first as default */
 		if (of_property_read_bool(entry,
 				"qcom,mdss-dsi-timing-default"))
@@ -2135,9 +2172,6 @@ static int mdss_panel_parse_dt(struct device_node *np,
 	static const char *pdest;
 	struct mdss_panel_info *pinfo = &(ctrl_pdata->panel_data.panel_info);
 
-	rc = __mdss_panel_parse_display_timings(np, &ctrl_pdata->panel_data);
-	if (rc)
-		return rc;
 	rc = of_property_read_u32(np,
 		"qcom,mdss-pan-physical-width-dimension", &tmp);
 	pinfo->physical_width = (!rc ? tmp : 0);
@@ -2300,6 +2334,10 @@ static int mdss_panel_parse_dt(struct device_node *np,
 			pinfo->mode_sel_state = MODE_SEL_DSC_SINGLE;
 		else if (!strcmp(data, "dual_mode"))
 			pinfo->mode_sel_state = MODE_SEL_SPLIT;
+		else if (!strcmp(data, "high"))
+			pinfo->mode_sel_state = MODE_GPIO_HIGH;
+		else if (!strcmp(data, "low"))
+			pinfo->mode_sel_state = MODE_GPIO_LOW;
 	} else {
 		/* Set default mode as SPLIT mode */
 		pinfo->mode_sel_state = MODE_SEL_SPLIT;
@@ -2326,6 +2364,12 @@ static int mdss_panel_parse_dt(struct device_node *np,
 
 	mdss_dsi_parse_reset_seq(np, pinfo->rst_seq, &(pinfo->rst_seq_len),
 		"qcom,mdss-dsi-reset-sequence");
+
+	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->on_cmds,
+		"qcom,mdss-dsi-on-command", "qcom,mdss-dsi-on-command-state");
+
+	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->post_panel_on_cmds,
+		"qcom,mdss-dsi-post-panel-on-command", NULL);
 
 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->off_cmds,
 		"qcom,mdss-dsi-off-command", "qcom,mdss-dsi-off-command-state");

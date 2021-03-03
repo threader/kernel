@@ -1189,6 +1189,7 @@ int mdss_mdp_cmd_kickoff(struct mdss_mdp_ctl *ctl, void *arg)
 	MDSS_XLOG(ctl->num,  atomic_read(&ctx->koff_cnt), ctx->clk_enabled,
 						ctx->rdptr_enabled);
 
+#ifdef CONFIG_FB_MSM_MDSS_SPECIFIC_PANEL
 	if (!__mdss_mdp_cmd_is_panel_power_on_interactive(ctx)) {
 		if (ctl->mfd) {
 			struct mdss_panel_data *pdata;
@@ -1206,7 +1207,6 @@ int mdss_mdp_cmd_kickoff(struct mdss_mdp_ctl *ctl, void *arg)
 			sctx->panel_power_state = MDSS_PANEL_POWER_ON;
 	}
 
-#ifdef CONFIG_FB_MSM_MDSS_SPECIFIC_PANEL
 	if (disp_on_in_hs) {
  #ifdef CONFIG_SOMC_PANEL_INCELL
 		rc = mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_POST_PANEL_ON, NULL);

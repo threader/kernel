@@ -9756,11 +9756,12 @@ static const struct snd_soc_dapm_widget tasha_dapm_widgets[] = {
 				SND_SOC_DAPM_POST_PMD),
 	SND_SOC_DAPM_AIF_IN_E("AIF3 PB", "AIF3 Playback", 0, SND_SOC_NOPM,
 				AIF3_PB, 0, tasha_codec_enable_slimrx,
-				SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD)|
+				SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_PRE_PMD |
 				SND_SOC_DAPM_POST_PMD),
+#ifndef CONFIG_ARCH_SONY_LOIRE
 	SND_SOC_DAPM_AIF_IN_E("AIF4 PB", "AIF4 Playback", 0, SND_SOC_NOPM,
 				AIF4_PB, 0, tasha_codec_enable_slimrx,
-				SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD |
+				SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_PRE_PMD |
 				SND_SOC_DAPM_POST_PMD),
 #endif
 	SND_SOC_DAPM_AIF_IN_E("AIF MIX1 PB", "AIF Mix Playback", 0,
