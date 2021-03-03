@@ -461,7 +461,7 @@ struct fg_chip {
 	spinlock_t		sec_access_lock;
 	struct mutex		rw_lock;
 	struct mutex		sysfs_restart_lock;
-	struct delayed_work	batt_profile_init;
+	struct work_struct	batt_profile_init;
 	struct work_struct	dump_sram;
 	struct work_struct	status_change_work;
 	struct work_struct	cycle_count_work;
@@ -5743,7 +5743,7 @@ static void batt_profile_init(struct work_struct *work)
 {
 	struct fg_chip *chip = container_of(work,
 				struct fg_chip,
-				batt_profile_init.work);
+				batt_profile_init);
 
 	if (fg_batt_profile_init(chip))
 		pr_err("failed to initialize profile\n");
@@ -6363,13 +6363,13 @@ static void fg_cancel_all_works(struct fg_chip *chip)
 	cancel_delayed_work_sync(&chip->update_temp_work);
 	cancel_delayed_work_sync(&chip->update_jeita_setting);
 	cancel_delayed_work_sync(&chip->check_empty_work);
-	cancel_delayed_work_sync(&chip->batt_profile_init);
 	alarm_try_to_cancel(&chip->fg_cap_learning_alarm);
 	if (!chip->ima_error_handling)
 		cancel_work_sync(&chip->ima_error_recovery_work);
 	cancel_work_sync(&chip->rslow_comp_work);
 	cancel_work_sync(&chip->set_resume_soc_work);
 	cancel_work_sync(&chip->fg_cap_learning_work);
+	cancel_work_sync(&chip->batt_profile_init);
 	cancel_work_sync(&chip->dump_sram);
 	cancel_work_sync(&chip->bcl_hi_power_work);
 	cancel_work_sync(&chip->status_change_work);
@@ -7522,7 +7522,7 @@ static void delayed_init_work(struct work_struct *work)
 		update_temp_data(&chip->update_temp_work.work);
 
 	if (!chip->use_otp_profile)
-		schedule_delayed_work(&chip->batt_profile_init, 0);
+		schedule_work(&chip->batt_profile_init);
 
 	if (chip->ima_supported && fg_reset_on_lockup)
 		schedule_delayed_work(&chip->check_sanity_work,
@@ -7604,7 +7604,6 @@ static int fg_probe(struct spmi_device *spmi)
 	INIT_DELAYED_WORK(&chip->update_sram_data, update_sram_data_work);
 	INIT_DELAYED_WORK(&chip->update_temp_work, update_temp_data);
 	INIT_DELAYED_WORK(&chip->check_empty_work, check_empty_work);
-	INIT_DELAYED_WORK(&chip->batt_profile_init, batt_profile_init);
 	INIT_WORK(&chip->rslow_comp_work, rslow_comp_work);
 	INIT_WORK(&chip->fg_cap_learning_work, fg_cap_learning_work);
 	INIT_WORK(&chip->batt_profile_init, batt_profile_init);

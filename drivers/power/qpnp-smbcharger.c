@@ -1177,7 +1177,7 @@ static void update_typec_status(struct smbchg_chip *chip)
 	union power_supply_propval capability = {0, };
 	int rc;
 
-	get_property_from_typec(chip, POWER_SUPPLY_PROP_TYPE, &type);
+	get_property_from_typec(chip, POWER_SUPPLY_PROP_REAL_TYPE, &type);
 	if (type.intval != POWER_SUPPLY_TYPE_UNKNOWN) {
 		get_property_from_typec(chip,
 				POWER_SUPPLY_PROP_CURRENT_CAPABILITY,
@@ -7168,7 +7168,7 @@ static int determine_initial_status(struct smbchg_chip *chip)
 	chg_term_handler(0, chip);
 #ifndef CONFIG_QPNP_SMBCHARGER_EXTENSION
 	if (chip->typec_psy) {
-		get_property_from_typec(chip, POWER_SUPPLY_PROP_TYPE, &type);
+		get_property_from_typec(chip, POWER_SUPPLY_PROP_REAL_TYPE, &type);
 		update_typec_otg_status(chip, type.intval, true);
 	} else {
 		usbid_change_handler(0, chip);
@@ -7198,7 +7198,7 @@ static int determine_initial_status(struct smbchg_chip *chip)
 	}
 #ifdef CONFIG_QPNP_SMBCHARGER_EXTENSION
 	if (chip->typec_psy) {
-		get_property_from_typec(chip, POWER_SUPPLY_PROP_TYPE, &type);
+		get_property_from_typec(chip, POWER_SUPPLY_PROP_REAL_TYPE, &type);
 		update_typec_otg_status(chip, type.intval, true);
 	} else {
 		usbid_change_handler(0, chip);

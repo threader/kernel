@@ -1269,6 +1269,8 @@ int msm_fd_hw_schedule_and_start(struct msm_fd_device *fd)
 
 	spin_unlock(&fd->slock);
 
+	msm_fd_hw_update_settings(fd, buf);
+
 	return 0;
 }
 
@@ -1302,8 +1304,12 @@ int msm_fd_hw_schedule_next_buffer(struct msm_fd_device *fd)
 		}
 	} else {
 		fd->state = MSM_FD_DEVICE_IDLE;
+		if (fd->recovery_mode)
+			dev_err(fd->dev, "No Buffer in recovery mode.Device Idle\n");
 	}
 	spin_unlock(&fd->slock);
+
+	msm_fd_hw_update_settings(fd, buf);
 
 	return 0;
 }

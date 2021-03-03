@@ -50,38 +50,6 @@ static struct msm_actuator *actuators[] = {
 	&msm_bivcm_actuator_table,
 };
 
-static void msm_actuator_vcm2_setdac(
-	struct msm_actuator_ctrl_t *a_ctrl,
-	int16_t target_pos)
-{
-	struct msm_camera_i2c_seq_reg_setting conf_array;
-	int32_t rc = 0;
-
-	conf_array.addr_type = a_ctrl->i2c_client.addr_type;
-	conf_array.delay = 0;
-	conf_array.size = 1;
-	conf_array.reg_setting =
-		kzalloc(sizeof(struct msm_camera_i2c_seq_reg_array),
-			GFP_KERNEL);
-	conf_array.reg_setting->reg_addr = 0x8A;
-	conf_array.reg_setting->reg_data_size = 9;
-	conf_array.reg_setting->reg_data[0] = 0x00;
-	conf_array.reg_setting->reg_data[1] = target_pos & 0xFF;
-	conf_array.reg_setting->reg_data[2] = (target_pos >> 8) & 0xFF;
-	conf_array.reg_setting->reg_data[3] = 0x55;
-	conf_array.reg_setting->reg_data[4] = 0xa8;
-	conf_array.reg_setting->reg_data[5] = 0x0;
-	conf_array.reg_setting->reg_data[6] = 0x0;
-	conf_array.reg_setting->reg_data[7] = 0x0;
-	conf_array.reg_setting->reg_data[8] = 0x0;
-	rc = a_ctrl->i2c_client.i2c_func_tbl->i2c_write_seq_table(
-		&a_ctrl->i2c_client,
-		&conf_array);
-	if (rc < 0)
-		pr_err("i2c_operation fail, rc = %d\n", rc);
-	kfree(conf_array.reg_setting);
-}
-
 static int32_t msm_actuator_piezo_set_default_focus(
 	struct msm_actuator_ctrl_t *a_ctrl,
 	struct msm_actuator_move_params_t *move_params)
