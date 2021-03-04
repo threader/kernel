@@ -96,7 +96,7 @@ static void mdss_dsi_pm_qos_update_request(int val)
 	pm_qos_update_request(&mdss_dsi_pm_qos_request, val);
 }
 
-static int mdss_dsi_pinctrl_set_state(struct mdss_dsi_ctrl_pdata *ctrl_pdata,
+int mdss_dsi_pinctrl_set_state(struct mdss_dsi_ctrl_pdata *ctrl_pdata,
 					bool active);
 
 static struct mdss_dsi_ctrl_pdata *mdss_dsi_get_ctrl(u32 ctrl_id)
@@ -2186,7 +2186,7 @@ static void mdss_dsi_dba_work(struct work_struct *work)
 
 static int mdss_dsi_check_params(struct mdss_dsi_ctrl_pdata *ctrl, void *arg)
 {
-	struct mdss_panel_info *reconf_pinfo, *pinfo;
+	struct mdss_panel_info *var_pinfo, *pinfo;
 	int rc = 0;
 
 	if (!ctrl || !arg)
@@ -2196,13 +2196,20 @@ static int mdss_dsi_check_params(struct mdss_dsi_ctrl_pdata *ctrl, void *arg)
 	if (!pinfo->is_pluggable)
 		return 0;
 
-	reconf_pinfo = (struct mdss_panel_info *)arg;
+	var_pinfo = (struct mdss_panel_info *)arg;
 
 	pr_debug("%s: reconfig xres: %d yres: %d, current xres: %d yres: %d\n",
-			__func__, reconf_pinfo->xres, reconf_pinfo->yres,
+			__func__, var_pinfo->xres, var_pinfo->yres,
 					pinfo->xres, pinfo->yres);
-	if ((reconf_pinfo->xres != pinfo->xres) ||
-			(reconf_pinfo->yres != pinfo->yres))
+	if ((var_pinfo->xres != pinfo->xres) ||
+		(var_pinfo->yres != pinfo->yres) ||
+		(var_pinfo->lcdc.h_back_porch != pinfo->lcdc.h_back_porch) ||
+		(var_pinfo->lcdc.h_front_porch != pinfo->lcdc.h_front_porch) ||
+		(var_pinfo->lcdc.h_pulse_width != pinfo->lcdc.h_pulse_width) ||
+		(var_pinfo->lcdc.v_back_porch != pinfo->lcdc.v_back_porch) ||
+		(var_pinfo->lcdc.v_front_porch != pinfo->lcdc.v_front_porch) ||
+		(var_pinfo->lcdc.v_pulse_width != pinfo->lcdc.v_pulse_width)
+		)
 		rc = 1;
 
 	return rc;
