@@ -229,11 +229,19 @@ static ssize_t store_clock_gating_enabled(struct kobject *kobj,
 		return count;
 	}
 
-	store_clock_gating = true;
-	if (prev_battery_percentage < BATT_LOW_THRESHOLD)
+	cpumask_copy(&curr_req.offline_mask, &l1_l2_offline_mask);
+	ret = devmgr_client_request_mitigation(
+			hotplug_handle,
+			HOTPLUG_MITIGATION_REQ,
+			&curr_req);
+	if (ret) {
+		pr_err("hotplug request failed. err:%d\n", ret);
 		return count;
+	}
 
-	lpm_dynamic_clock_gating_workaround();
+	store_clock_gating = true;
+	if (cpumask_equal(&offline_mask, &l1_l2_offline_mask))
+		queue_work(lpm_wa_wq, &lpm_wa_work);
 
 	return count;
 }

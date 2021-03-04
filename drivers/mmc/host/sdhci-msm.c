@@ -3886,6 +3886,9 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	if (msm_host->pdata->nonremovable)
 		msm_host->mmc->caps |= MMC_CAP_NONREMOVABLE;
 
+	if (msm_host->pdata->broken_pwr_cycle_host)
+		msm_host->mmc->caps2 |= MMC_CAP2_BROKEN_PWR_CYCLE;
+
 	if (msm_host->pdata->nonhotplug)
 		msm_host->mmc->caps2 |= MMC_CAP2_NONHOTPLUG;
 

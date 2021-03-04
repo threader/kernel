@@ -1798,7 +1798,7 @@ static void dwc3_chg_detect_work(struct work_struct *w)
 		mdwc->charger.notify_detection_complete(mdwc->otg_xceiv->otg,
 								&mdwc->charger);
 	default:
-		pm_runtime_put(mdwc->dev);
+		pm_runtime_put_sync(mdwc->dev);
 		return;
 	}
 
@@ -2608,6 +2608,9 @@ static int dwc3_msm_power_get_property_usb(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_ONLINE:
 		val->intval = mdwc->online;
 		break;
+	case POWER_SUPPLY_PROP_REAL_TYPE:
+		val->intval = mdwc->usb_supply_type;
+		break;
 	case POWER_SUPPLY_PROP_TYPE:
 		val->intval = psy->type;
 		break;
@@ -2718,23 +2721,22 @@ static int dwc3_msm_power_set_property_usb(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_CURRENT_MAX:
 		mdwc->current_max = val->intval;
 		break;
-	case POWER_SUPPLY_PROP_TYPE:
-#ifdef CONFIG_SONY_USB_EXTENSIONS
-		if (mdwc->otg_xceiv) {
-			if ((mdwc->ext_inuse || mdwc->ext_switching) &&
-			    (POWER_SUPPLY_TYPE_UNKNOWN != val->intval))
-				return 0;
-		}
-		/* If it already received a notification of HVDCP,
-		 * skip this setting of power_supply to avoid overwrite by DCP.
+	case POWER_SUPPLY_PROP_REAL_TYPE:
+		mdwc->usb_supply_type = val->intval;
+		/*
+		 * Update TYPE property to DCP for HVDCP/HVDCP3 charger types
+		 * so that they can be recongized as AC chargers by healthd.
+		 * Don't report UNKNOWN charger type to prevent healthd missing
+		 * detecting this power_supply status change.
 		 */
-		if (psy->type == POWER_SUPPLY_TYPE_USB_HVDCP &&
-				val->intval == POWER_SUPPLY_TYPE_USB_DCP)
-			return 0;
-#endif
-		psy->type = val->intval;
-
-		switch (psy->type) {
+		if (mdwc->usb_supply_type == POWER_SUPPLY_TYPE_USB_HVDCP_3
+			|| mdwc->usb_supply_type == POWER_SUPPLY_TYPE_USB_HVDCP)
+			psy->type = POWER_SUPPLY_TYPE_USB_DCP;
+		else if (mdwc->usb_supply_type == POWER_SUPPLY_TYPE_UNKNOWN)
+			psy->type = POWER_SUPPLY_TYPE_USB;
+		else
+			psy->type = mdwc->usb_supply_type;
+		switch (mdwc->usb_supply_type) {
 		case POWER_SUPPLY_TYPE_USB:
 			mdwc->charger.chg_type = DWC3_SDP_CHARGER;
 			break;
@@ -2852,6 +2854,7 @@ static enum power_supply_property dwc3_msm_pm_power_props_usb[] = {
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
 	POWER_SUPPLY_PROP_HEALTH,
 	POWER_SUPPLY_PROP_USB_OTG,
+	POWER_SUPPLY_PROP_REAL_TYPE,
 #ifdef CONFIG_SONY_USB_EXTENSIONS
 	POWER_SUPPLY_PROP_CHARGER_TYPE,
 #endif
