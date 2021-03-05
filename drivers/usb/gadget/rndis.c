@@ -1190,6 +1190,7 @@ int rndis_rm_hdr(struct gether *port,
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(rndis_rm_hdr);
 
 #ifdef CONFIG_USB_GADGET_DEBUG_FILES
 

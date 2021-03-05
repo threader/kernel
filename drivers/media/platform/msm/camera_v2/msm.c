@@ -729,7 +729,6 @@ static long msm_private_ioctl(struct file *file, void *fh,
 	if (!event_data)
 		return -EINVAL;
 
-	memset(&event, 0, sizeof(struct v4l2_event));
 	switch (cmd) {
 	case MSM_CAM_V4L2_IOCTL_NOTIFY:
 	case MSM_CAM_V4L2_IOCTL_CMD_ACK:
@@ -739,6 +738,7 @@ static long msm_private_ioctl(struct file *file, void *fh,
 		return -ENOTTY;
 	}
 
+	memset(&event, 0, sizeof(struct v4l2_event));
 	session_id = event_data->session_id;
 	stream_id = event_data->stream_id;
 
@@ -938,7 +938,7 @@ int msm_post_event(struct v4l2_event *event, int timeout)
 	}
 
 	/*re-init wait_complete */
-	INIT_COMPLETION(cmd_ack->wait_complete);
+	reinit_completion(&cmd_ack->wait_complete);
 
 	v4l2_event_queue(vdev, event);
 

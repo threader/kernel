@@ -694,7 +694,7 @@ static int32_t msm_actuator_move_focus(
 	return rc;
 }
 
-static int32_t msm_actuator_vcm2_move_focus(
+static int32_t msm_actuator_bivcm_move_focus(
 	struct msm_actuator_ctrl_t *a_ctrl,
 	struct msm_actuator_move_params_t *move_params)
 {
@@ -1389,7 +1389,7 @@ static int32_t msm_actuator_set_param(struct msm_actuator_ctrl_t *a_ctrl,
 				(void *)set_info->actuator_params.init_settings,
 				set_info->actuator_params.init_setting_size *
 				sizeof(struct reg_settings_t))) {
-				vfree(init_settings);
+				kfree(init_settings);
 				kfree(a_ctrl->i2c_reg_tbl);
 				a_ctrl->i2c_reg_tbl = NULL;
 				pr_err("Error copying init_settings\n");
@@ -2133,7 +2133,7 @@ static struct msm_actuator msm_bivcm_actuator_table = {
 	.act_type = ACTUATOR_BIVCM,
 	.func_tbl = {
 		.actuator_init_step_table = msm_actuator_bivcm_init_step_table,
-		.actuator_move_focus =  msm_actuator_vcm2_move_focus,
+		.actuator_move_focus = msm_actuator_bivcm_move_focus,
 		.actuator_write_focus = NULL,
 		.actuator_set_default_focus = msm_actuator_set_default_focus,
 		.actuator_init_focus = msm_actuator_init_focus,

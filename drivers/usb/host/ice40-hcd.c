@@ -23,6 +23,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/err.h>
+#include <linux/ftrace_event.h>
 #include <linux/ktime.h>
 #include <linux/uaccess.h>
 #include <linux/debugfs.h>

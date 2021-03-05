@@ -462,7 +462,7 @@ static int msm_csiphy_lane_config(struct csiphy_device *csiphy_dev,
 		return rc;
 	}
 
-	clk_rate = (csiphy_params->csiphy_clk > 0)
+	clk_rate = ((int)csiphy_params->csiphy_clk > 0)
 			? csiphy_params->csiphy_clk :
 			csiphy_dev->csiphy_max_clk;
 	clk_rate = msm_camera_clk_set_rate(&csiphy_dev->pdev->dev,
@@ -736,17 +736,17 @@ static int msm_csiphy_init(struct csiphy_device *csiphy_dev)
 	}
 
 	CDBG("%s:%d called\n", __func__, __LINE__);
-	if (csiphy_dev->csiphy_state == CSIPHY_POWER_UP) {
-		pr_err("%s: csiphy invalid state %d\n", __func__,
-			csiphy_dev->csiphy_state);
-		rc = -EINVAL;
+	if (csiphy_dev->ref_count++) {
+		CDBG("%s csiphy refcount = %d\n", __func__,
+			csiphy_dev->ref_count);
 		return rc;
 	}
 	CDBG("%s:%d called\n", __func__, __LINE__);
 
-	if (csiphy_dev->ref_count++) {
-		CDBG("%s csiphy refcount = %d\n", __func__,
-			csiphy_dev->ref_count);
+	if (csiphy_dev->csiphy_state == CSIPHY_POWER_UP) {
+		pr_err("%s: csiphy invalid state %d\n", __func__,
+			csiphy_dev->csiphy_state);
+		rc = -EINVAL;
 		return rc;
 	}
 	CDBG("%s:%d called\n", __func__, __LINE__);
@@ -814,6 +814,12 @@ static int msm_csiphy_init(struct csiphy_device *csiphy_dev)
 	}
 	csiphy_dev->csiphy_sof_debug_count = 0;
 	CDBG("%s:%d called\n", __func__, __LINE__);
+	if (csiphy_dev->ref_count++) {
+		CDBG("%s csiphy refcount = %d\n", __func__,
+			csiphy_dev->ref_count);
+		return rc;
+	}
+	CDBG("%s:%d called\n", __func__, __LINE__);
 	if (csiphy_dev->csiphy_state == CSIPHY_POWER_UP) {
 		pr_err("%s: csiphy invalid state %d\n", __func__,
 			csiphy_dev->csiphy_state);
@@ -822,12 +828,6 @@ static int msm_csiphy_init(struct csiphy_device *csiphy_dev)
 	}
 	CDBG("%s:%d called\n", __func__, __LINE__);
 
-	if (csiphy_dev->ref_count++) {
-		CDBG("%s csiphy refcount = %d\n", __func__,
-			csiphy_dev->ref_count);
-		return rc;
-	}
-	CDBG("%s:%d called\n", __func__, __LINE__);
 	rc = cam_config_ahb_clk(NULL, 0, CAM_AHB_CLIENT_CSIPHY,
 			CAM_AHB_SVS_VOTE);
 	if (rc < 0) {
@@ -846,7 +846,7 @@ static int msm_csiphy_init(struct csiphy_device *csiphy_dev)
 		csiphy_dev->ref_count--;
 		goto csiphy_resource_fail;
 	}
-	CDBG("%s:%d called\n", __func__, __LINE__);
+	CDBG("%s:%d clk enable success\n", __func__, __LINE__);
 
 	if (csiphy_dev->csiphy_3phase == CSI_3PHASE_HW)
 		msm_csiphy_3ph_reset(csiphy_dev);
@@ -1246,7 +1246,7 @@ static const struct v4l2_subdev_ops msm_csiphy_subdev_ops = {
 static int msm_csiphy_get_clk_info(struct csiphy_device *csiphy_dev,
 	struct platform_device *pdev)
 {
-	int i, rc;
+	int i, rc = 0;
 	char *csi_3p_clk_name = "csi_phy_3p_clk";
 	char *csi_3p_clk_src_name = "csiphy_3p_clk_src";
 	uint32_t clk_cnt = 0;
@@ -1262,6 +1262,7 @@ static int msm_csiphy_get_clk_info(struct csiphy_device *csiphy_dev,
 	if (csiphy_dev->num_all_clk > CSIPHY_NUM_CLK_MAX) {
 		pr_err("%s: invalid count=%zu, max is %d\n", __func__,
 			csiphy_dev->num_all_clk, CSIPHY_NUM_CLK_MAX);
+		rc = -EINVAL;
 		goto MAX_CLK_ERROR;
 	}
 
@@ -1305,13 +1306,14 @@ static int msm_csiphy_get_clk_info(struct csiphy_device *csiphy_dev,
 	}
 
 	csiphy_dev->num_clk = clk_cnt;
+	return rc;
 MAX_CLK_ERROR:
 	msm_camera_put_clk_info(csiphy_dev->pdev,
 		&csiphy_dev->csiphy_all_clk_info,
 		&csiphy_dev->csiphy_all_clk,
 		csiphy_dev->num_all_clk);
 
-	return 0;
+	return rc;
 }
 
 static int csiphy_probe(struct platform_device *pdev)
@@ -1476,7 +1478,7 @@ static int msm_csiphy_exit(struct platform_device *pdev)
 		&csiphy_dev->csiphy_all_clk,
 		csiphy_dev->num_all_clk);
 
-	msm_camera_put_reg_base(pdev, csiphy_dev->base, "csid", true);
+	msm_camera_put_reg_base(pdev, csiphy_dev->base, "csiphy", true);
 	if (csiphy_dev->hw_dts_version >= CSIPHY_VERSION_V30) {
 		msm_camera_put_reg_base(pdev, csiphy_dev->clk_mux_base,
 			"csiphy_clk_mux", true);
